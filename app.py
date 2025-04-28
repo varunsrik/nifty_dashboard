@@ -3,12 +3,20 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
+
+DEFAULT_URL   = "https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app"
+DEFAULT_TOKEN = "1391"
+
+API_URL   = st.secrets.get("api", {}).get("url",   DEFAULT_URL)
+API_TOKEN = st.secrets.get("api", {}).get("token", DEFAULT_TOKEN)
+
+
 st.set_page_config(page_title="📊 Market Breadth", layout="wide")
 
 # Replace with your actual ngrok URL
 
-API_URL = ' https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app'
-API_TOKEN = "1391"  # same token used in api_server.py
+#API_URL = ' https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app'
+#API_TOKEN = "1391"  # same token used in api_server.py
 
 tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer"])
 
