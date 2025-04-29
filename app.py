@@ -2,6 +2,9 @@ import requests
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+import yfinance as yf
+import datetime as dt
+from pandas.tseries.offsets import BDay   # business day helper
 
 
 DEFAULT_URL   = "https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app"
@@ -43,6 +46,53 @@ def fetch_cash(symbol_list):
     df["date"] = pd.to_datetime(df["date"])
     return df
 
+
+
+TODAY = dt.date.today()
+
+def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = None):
+    """
+    Take an EOD dataframe (date-indexed) and attempt to
+    append today's OHLC/volume candle from yfinance.
+    If anything fails, the original df is returned untouched.
+    """
+    try:
+        # do nothing if we already have today's date in our SQL data
+        if TODAY in df["date"].dt.date.values:
+            return df
+
+        tick = yfin_ticker or symbol
+        live = yf.download(
+            tick, 
+            start=TODAY, end=TODAY + BDay(1),
+            progress=False, auto_adjust=False, interval="1d"
+        )
+        if live.empty:
+            return df                         # market closed or ticker invalid
+
+        live = live.reset_index()
+        live.rename(columns=str.lower, inplace=True)
+        live["symbol"] = symbol
+        live["date"]   = pd.to_datetime(live["date"]).dt.date
+
+        # yfinance columns: open high low close adj close volume
+        # keep only what's needed for each tab
+        # merge with original df (avoid duplicates)
+        cols_in_common = [c for c in df.columns if c in live.columns]
+        df_today = live[cols_in_common]
+
+        df_combined = (
+            pd.concat([df, df_today], ignore_index=True)
+              .drop_duplicates(subset=["date", "symbol"])
+              .sort_values("date")
+        )
+        return df_combined
+
+    except Exception as e:
+        # silent fail → return original EOD dataframe
+        print(f"yfinance fetch failed for {symbol}: {e}")
+        return df
+
 # ---------- Market Breadth tab ----------
 with tabs[0]:
     st.header("📊 Market Breadth")
@@ -53,6 +103,15 @@ with tabs[0]:
     if data.empty:
         st.warning("No cash data returned.")
         st.stop()
+    
+    
+    
+    # add today's candle for every symbol (loop once; still < 5 s)
+    frames = []
+    for sym in symbols:
+        df_sym = data[data["symbol"] == sym]
+        frames.append(append_live_candle(df_sym, sym))
+    data = pd.concat(frames, ignore_index=True)
 
     # --- compute advance‑decline & EMA stats ---
     data.sort_values(["symbol", "date"], inplace=True)
@@ -181,6 +240,24 @@ with tabs[1]:
             .set_index("symbol")["close"]
             .rename("cash_close_latest")
         )
+                
+                
+        # add today's live bar for each symbol
+        frames = []
+        for sym in combined.index:              # only symbols already in combined
+            df_sym = cash_df[cash_df["symbol"] == sym]
+            frames.append(append_live_candle(df_sym, sym))
+        cash_df_live = pd.concat(frames, ignore_index=True)
+        
+        latest_date_live = cash_df_live["date"].max()
+        cash_latest = (
+            cash_df_live[cash_df_live["date"] == latest_date_live]
+                .set_index("symbol")["close"]
+                .rename("cash_close_latest")
+        )
+                
+        
+        
         cash_prev = (
             cash_df[cash_df["date"] == prev_expiry]
             .set_index("symbol")["close"]
@@ -339,6 +416,8 @@ with tabs[2]:
         st.warning("No price data found for this symbol.")
         st.stop()
 
+    price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper())
+    index_df = append_live_candle(index_df, INDEX_SYMBOL, yfin_ticker="^NSEI")
     # ----------- prep & filtering -------------------------------------------
     price_df["date"]  = pd.to_datetime(price_df["date"])
     index_df["date"]  = pd.to_datetime(index_df["date"])
