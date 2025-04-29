@@ -379,7 +379,7 @@ with tabs[2]:
         specs=[[{"secondary_y": False}],
                [{"secondary_y": False}],
                [{"secondary_y": False}],
-               [{"secondary_y": False}]],
+               [{"secondary_y": True}]],
         # ←  raise the spacing + tweak height ratios
         vertical_spacing = 0.07,          # was 0.03
         row_heights = [0.45, 0.25, 0.15, 0.15]
