@@ -83,6 +83,7 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
         live.rename(columns=str.lower, inplace=True)
         live["symbol"] = symbol
         live["date"]   = pd.to_datetime(live["date"]).dt.date
+        live.columns = live.columns.get_level_values(0)
 
         # yfinance columns: open high low close adj close volume
         # keep only what's needed for each tab
