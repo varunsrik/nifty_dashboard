@@ -14,13 +14,13 @@ API_URL   = st.secrets.get("api", {}).get("url",   DEFAULT_URL)
 API_TOKEN = st.secrets.get("api", {}).get("token", DEFAULT_TOKEN)
 
 
+st.set_page_config(page_title="📊 Market Breadth", layout="wide")
+
 TODAY = dt.date.today()
 TODAY_STR  = TODAY.strftime("%d %b %Y")
 
 st.sidebar.title("⚙️ Settings")
 USE_LIVE = st.sidebar.toggle("Include live (yfinance) candle", value=False, help="Adds today's bar via yfinance. Turn off to load faster.")
-
-st.set_page_config(page_title="📊 Market Breadth", layout="wide")
 
 # Replace with your actual ngrok URL
 
