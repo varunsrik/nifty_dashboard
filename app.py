@@ -67,7 +67,8 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
    
     try:
         # do nothing if we already have today's date in our SQL data
-        if TODAY in df["date"].dt.date.values:
+        today_ts = pd.Timestamp.today().normalize()
+        if today_ts in df["date"].values:
             return df
 
         tick = yfin_ticker or symbol
@@ -82,7 +83,7 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
         live = live.reset_index()
         live.rename(columns=str.lower, inplace=True)
         live["symbol"] = symbol
-        live["date"]   = pd.to_datetime(live["date"]).dt.date
+        live["date"]   = pd.to_datetime(live["date"])
         live.columns = live.columns.get_level_values(0)
 
         # yfinance columns: open high low close adj close volume
@@ -113,6 +114,8 @@ with tabs[0]:
     if data.empty:
         st.warning("No cash data returned.")
         st.stop()
+    
+    data["date"] = pd.to_datetime(data["date"]) 
     
     
     
