@@ -119,7 +119,7 @@ with tabs[0]:
     frames = []
     for sym in symbols:
         df_sym = data[data["symbol"] == sym]
-        frames.append(append_live_candle(df_sym, sym))
+        frames.append(append_live_candle(df_sym, sym+'.NS'))
     data = pd.concat(frames, ignore_index=True)
 
     # --- compute advance‑decline & EMA stats ---
@@ -255,7 +255,7 @@ with tabs[1]:
         frames = []
         for sym in combined.index:              # only symbols already in combined
             df_sym = cash_df[cash_df["symbol"] == sym]
-            frames.append(append_live_candle(df_sym, sym))
+            frames.append(append_live_candle(df_sym, sym+'.NS'))
         cash_df_live = pd.concat(frames, ignore_index=True)
         
         latest_date_live = cash_df_live["date"].max()
