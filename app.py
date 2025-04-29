@@ -207,7 +207,7 @@ with tabs[0]:
 
 
 with tabs[1]:
-    st.header("📈 Open Interest Analysis — {TODAY_STR}")
+    st.header(f"📈 Open Interest Analysis — {TODAY_STR}")
     
     FNO_URL = API_URL + "/fno_data"
     headers = {"Authorization": "Bearer 1391"}
@@ -397,7 +397,7 @@ INDEX_SYMBOL = "NIFTY 50"
 # ----------------------------------------------------------------- Stock Explorer
 
 with tabs[2]:
-    st.header("📉 Stock Explorer — {TODAY_STR}")
+    st.header(f"📉 Stock Explorer — {TODAY_STR}")
     
     # ↓ dropdown combines Nifty-500 and F&O names
     nifty500_syms = get_constituents()["Symbol"].unique().tolist()
@@ -427,6 +427,10 @@ with tabs[2]:
 
     price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper()+'.NS')
     index_df = append_live_candle(index_df, INDEX_SYMBOL, yfin_ticker="^NSEI")
+    
+    st.write(price_df)
+    st.write(index_df)
+    
     # ----------- prep & filtering -------------------------------------------
     price_df["date"]  = pd.to_datetime(price_df["date"])
     index_df["date"]  = pd.to_datetime(index_df["date"])
