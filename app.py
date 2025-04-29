@@ -157,7 +157,6 @@ with tabs[1]:
         latest_expiry = df[df['date'] == latest_date]['front_expiry'].mode().iloc[0]
     
         # Previous expiry is the max expiry date before the latest expiry
-        st.write(df)
         prev_expiry = df[df['front_expiry'] < latest_expiry]['front_expiry'].max()
     
         st.write(f"Latest Expiry: `{latest_expiry.date()}` | Previous Expiry: `{prev_expiry.date()}`")
@@ -344,12 +343,20 @@ with tabs[2]:
     price_df["date"]  = pd.to_datetime(price_df["date"])
     index_df["date"]  = pd.to_datetime(index_df["date"])
     ind_df["date"]    = pd.to_datetime(ind_df["date"])
+    
+    price_df["deliv_pct_smooth"] = (
+    price_df["deliv_pct"]
+    .ewm(span=3, adjust=False)
+    .mean()
+    )
 
     # window filter
     cutoff = price_df["date"].max() - pd.Timedelta(days=win_days)
     price_df = price_df[price_df["date"] >= cutoff]
     index_df = index_df[index_df["date"] >= cutoff]
     ind_df   = ind_df[ind_df["date"] >= cutoff]
+    
+    prev_close_price = price_df.loc[price_df["date"] == prev_expiry, "close"].squeeze()
 
     # align index close to price dates
     index_series = (
@@ -367,14 +374,15 @@ with tabs[2]:
 
     # ----------- build Plotly figure ----------------------------------------
     fig = make_subplots(
-        rows=3, cols=1,
+        rows=4, cols=1,
         shared_xaxes=True,
         specs=[[{"secondary_y": False}],
                [{"secondary_y": False}],
+               [{"secondary_y": False}],
                [{"secondary_y": False}]],
         # ←  raise the spacing + tweak height ratios
-        vertical_spacing=0.07,          # was 0.03
-        row_heights=[0.55, 0.30, 0.15]   # keep or nudge to [0.58, .27, .15]
+        vertical_spacing = 0.07,          # was 0.03
+        row_heights = [0.45, 0.25, 0.15, 0.15]
     )
     # Row-1: Candlestick
     fig.add_trace(
@@ -402,6 +410,15 @@ with tabs[2]:
         row=2, col=1
     )
     
+    fig.add_hline(
+    y=prev_close_price,
+    line_dash="dash",
+    line_color="orange",
+    annotation_text="Prev Expiry Close",
+    annotation_position="top left",
+    row=1, col=1
+    )
+    
     # remove Sat/Sun gaps + any other blank days
     fig.update_xaxes(
         rangebreaks=[
@@ -427,6 +444,45 @@ with tabs[2]:
                            xref="paper", yref="paper",
                            x=0.02, y=0.12, showarrow=False)
 
+  
+     # Row-4: Volume and delivery pct
+    fig.add_trace(
+    go.Bar(
+        x=price_df["date"],
+        y=price_df["volume"],
+        name="Volume",
+        marker_color="grey",
+    ),
+    row=4, col=1, secondary_y=False
+    )
+    
+    
+    fig.add_trace(
+    go.Scatter(
+        x=price_df["date"],
+        y=price_df["deliv_pct_smooth"],
+        name="Delivery %",
+        mode="lines",
+        line=dict(width=2, color="purple", dash="dot"),
+    ),
+    row=4, col=1, secondary_y=True
+    )
+    
+    colors = price_df["close"].diff().apply(lambda x: "green" if x > 0 else "red")
+    
+    fig.add_trace(
+        go.Bar(
+            x=price_df["date"],
+            y=price_df["volume"],
+            marker_color=colors,
+            name="Volume",
+        ),
+        row=4, col=1, secondary_y=False
+    )
+    
+    fig.update_yaxes(title_text="Volume", row=4, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="Deliv %", row=4, col=1, secondary_y=True)
+        
     # final cosmetics
     fig.update_layout(
         height=800,
