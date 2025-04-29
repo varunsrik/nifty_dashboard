@@ -14,6 +14,12 @@ API_URL   = st.secrets.get("api", {}).get("url",   DEFAULT_URL)
 API_TOKEN = st.secrets.get("api", {}).get("token", DEFAULT_TOKEN)
 
 
+TODAY = dt.date.today()
+TODAY_STR  = TODAY.strftime("%d %b %Y")
+
+st.sidebar.title("⚙️ Settings")
+USE_LIVE = st.sidebar.toggle("Include live (yfinance) candle", value=False, help="Adds today's bar via yfinance. Turn off to load faster.")
+
 st.set_page_config(page_title="📊 Market Breadth", layout="wide")
 
 # Replace with your actual ngrok URL
@@ -48,7 +54,6 @@ def fetch_cash(symbol_list):
 
 
 
-TODAY = dt.date.today()
 
 def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = None):
     """
@@ -56,6 +61,10 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
     append today's OHLC/volume candle from yfinance.
     If anything fails, the original df is returned untouched.
     """
+    
+    if not USE_LIVE:
+       return df          
+   
     try:
         # do nothing if we already have today's date in our SQL data
         if TODAY in df["date"].dt.date.values:
@@ -95,7 +104,7 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
 
 # ---------- Market Breadth tab ----------
 with tabs[0]:
-    st.header("📊 Market Breadth")
+    st.header(f"📊 Market Breadth — {TODAY_STR}")
 
     constituents = get_constituents()
     symbols = constituents["Symbol"].unique().tolist()
@@ -198,7 +207,7 @@ with tabs[0]:
 
 
 with tabs[1]:
-    st.header("📈 Open Interest Analysis")
+    st.header("📈 Open Interest Analysis — {TODAY_STR}")
     
     FNO_URL = API_URL + "/fno_data"
     headers = {"Authorization": "Bearer 1391"}
@@ -388,7 +397,7 @@ INDEX_SYMBOL = "NIFTY 50"
 # ----------------------------------------------------------------- Stock Explorer
 
 with tabs[2]:
-    st.header("📉 Stock Explorer")
+    st.header("📉 Stock Explorer — {TODAY_STR}")
     
     # ↓ dropdown combines Nifty-500 and F&O names
     nifty500_syms = get_constituents()["Symbol"].unique().tolist()
@@ -416,7 +425,7 @@ with tabs[2]:
         st.warning("No price data found for this symbol.")
         st.stop()
 
-    price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper())
+    price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper()+'.NS')
     index_df = append_live_candle(index_df, INDEX_SYMBOL, yfin_ticker="^NSEI")
     # ----------- prep & filtering -------------------------------------------
     price_df["date"]  = pd.to_datetime(price_df["date"])
