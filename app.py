@@ -305,6 +305,9 @@ with tabs[1]:
         # 2) Pull CASH OHLC for all symbols over that window
         symbols_needed = combined.index.tolist()      # the same symbols present in combined
         
+        if not symbols_needed:
+            st.warning("No symbols after joining cash data; snapshot unchanged.")
+            st.stop()
         
         cash_all = fetch_cash(symbols_needed)         # uses POST /cash_data (cached 30-min)
         
@@ -410,10 +413,17 @@ INDEX_SYMBOL = "NIFTY 50"
 with tabs[2]:
     st.header(f"📉 Stock Explorer — {TODAY_STR}")
     
-    # ↓ dropdown combines Nifty-500 and F&O names
+    @st.cache_data(show_spinner=False, ttl=1800)
+    def get_fno_symbols():
+        resp = requests.get(API_URL + "/fno_data", headers={"Authorization": f"Bearer {API_TOKEN}"})
+        if resp.status_code == 200:
+            return pd.DataFrame(resp.json())["symbol"].unique().tolist()
+        return []               # fallback
+    
     nifty500_syms = get_constituents()["Symbol"].unique().tolist()
-    fno_syms      = df["symbol"].unique().tolist()        # from F&O tab earlier
+    fno_syms      = get_fno_symbols()
     all_syms      = sorted(set(nifty500_syms) | set(fno_syms))
+        
     choice        = st.selectbox("Choose a stock", all_syms, index=all_syms.index("RELIANCE") if "RELIANCE" in all_syms else 0)
 
     # window slider (radio buttons)
