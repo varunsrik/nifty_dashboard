@@ -246,6 +246,11 @@ with tabs[1]:
         
         # --- NEW: pull cash closes for the exact two dates --------------------------
         symbols_needed = combined.index.tolist()
+        
+        if not symbols_needed:
+            st.warning("No futures records for today's date yet; showing previous snapshot.")
+            st.stop()
+            
         cash_df = fetch_cash(symbols_needed)          # uses the POST /cash_data
     
         cash_latest = (
@@ -299,7 +304,8 @@ with tabs[1]:
         # ---------------------------------------------------------------------------
         # 2) Pull CASH OHLC for all symbols over that window
         symbols_needed = combined.index.tolist()      # the same symbols present in combined
-        st.write('SYMBOLS NEEDED:', symbols_needed)
+        
+        
         cash_all = fetch_cash(symbols_needed)         # uses POST /cash_data (cached 30-min)
         
         cash_window = cash_all[
