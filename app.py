@@ -299,6 +299,7 @@ with tabs[1]:
         # ---------------------------------------------------------------------------
         # 2) Pull CASH OHLC for all symbols over that window
         symbols_needed = combined.index.tolist()      # the same symbols present in combined
+        st.write('SYMBOLS NEEDED:', symbols_needed)
         cash_all = fetch_cash(symbols_needed)         # uses POST /cash_data (cached 30-min)
         
         cash_window = cash_all[
