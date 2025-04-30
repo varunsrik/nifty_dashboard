@@ -123,8 +123,17 @@ with tabs[0]:
     frames = []
     for sym in symbols:
         df_sym = data[data["symbol"] == sym]
-        frames.append(append_live_candle(df_sym, sym+'.NS'))
+        frames.append(
+    append_live_candle(
+        df_sym,
+        symbol       = sym,          # keep the symbol column consistent
+        yfin_ticker  = sym + ".NS"   # use .NS only for the Yahoo call
+        )
+    )
+        
     data = pd.concat(frames, ignore_index=True)
+    
+    
 
     # --- compute advance‑decline & EMA stats ---
     data.sort_values(["symbol", "date"], inplace=True)
@@ -449,9 +458,7 @@ with tabs[2]:
     price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper()+'.NS')
     index_df = append_live_candle(index_df, INDEX_SYMBOL, yfin_ticker="^NSEI")
     
-    st.write(price_df)
-    st.write(index_df)
-    
+
     # ----------- prep & filtering -------------------------------------------
     price_df["date"]  = pd.to_datetime(price_df["date"])
     index_df["date"]  = pd.to_datetime(index_df["date"])
