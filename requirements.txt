@@ -3,3 +3,4 @@ pandas
 requests
 plotly
 yfinance
+matplotlib>=3.8 
