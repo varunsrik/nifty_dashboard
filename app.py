@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import yfinance as yf
 import datetime as dt
 from pandas.tseries.offsets import BDay   # business day helper
+from plotly.subplots import make_subplots
 
 
 DEFAULT_URL   = "https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app"
@@ -12,7 +13,6 @@ DEFAULT_TOKEN = "1391"
 
 API_URL   = st.secrets.get("api", {}).get("url",   DEFAULT_URL)
 API_TOKEN = st.secrets.get("api", {}).get("token", DEFAULT_TOKEN)
-
 
 st.set_page_config(page_title="📊 Market Breadth", layout="wide")
 
@@ -22,36 +22,16 @@ TODAY_STR  = TODAY.strftime("%d %b %Y")
 st.sidebar.title("⚙️ Settings")
 USE_LIVE = st.sidebar.toggle("Include live (yfinance) candle", value=False, help="Adds today's bar via yfinance. Turn off to load faster.")
 
-# Replace with your actual ngrok URL
+tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis"])
 
-#API_URL = ' https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app'
-#API_TOKEN = "1391"  # same token used in api_server.py
 
-tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer"])
 
-BREADTH_URL = API_URL+"/cash_data"  
 
 # ---------- util helpers ----------
 
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, ttl='6h')
 def get_constituents():
     return pd.read_csv("data/nifty_500_constituents.csv")
-
-
-@st.cache_data(show_spinner=True, ttl=3600)
-def fetch_cash(symbol_list):
-    hdr = {"Authorization": f"Bearer {API_TOKEN}"}
-    r = requests.post(
-        f"{BREADTH_URL}",
-        headers=hdr,
-        json={"symbols": symbol_list},
-        timeout=60,
-    )
-    r.raise_for_status()
-    df = pd.DataFrame(r.json())
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
 
 
 
@@ -103,6 +83,61 @@ def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = 
         # silent fail → return original EOD dataframe
         print(f"yfinance fetch failed for {symbol}: {e}")
         return df
+    
+    
+
+# ------------ ONE-TIME bulk pulls (cached) --------------------
+@st.cache_data(ttl='6h', show_spinner=True)   
+def get_bulk_data():
+    hdr = {"Authorization": f"Bearer {API_TOKEN}"}
+
+    cash_400   = requests.post(
+        f"{API_URL}/cash_data",
+        headers=hdr,
+        json={"symbols": []}          # empty list → API returns *all* symbols
+    ).json()
+    cash_df = pd.DataFrame(cash_400)
+    cash_df["date"] = pd.to_datetime(cash_df["date"])
+
+    idx_400 = requests.post(
+        f"{API_URL}/index_data",
+        headers=hdr,
+        json={"symbol": "ALL"}        # implement "ALL" to return all index rows
+    ).json()
+    idx_df  = pd.DataFrame(idx_400)
+    idx_df["date"] = pd.to_datetime(idx_df["date"])
+
+    fno_400 = requests.get(f"{API_URL}/fno_data", headers=hdr).json()
+    fno_df  = pd.DataFrame(fno_400)
+    fno_df["date"] = pd.to_datetime(fno_df["date"])
+
+    return cash_df, idx_df, fno_df
+
+cash_df, idx_df, fno_df = get_bulk_data()
+
+
+@st.cache_data(ttl=900)            # 15 min cache; keyed by USE_LIVE
+def build_cash_df(use_live: bool):
+    df = cash_df.copy()            # cash_df came from get_bulk_data()
+
+    if not use_live:
+        return df                  # just SQL snapshot
+
+    # ─ add today's candle for every Nifty‑500 symbol ───────────
+    frames = []
+    for sym in get_constituents()["Symbol"].unique():
+        df_sym = df[df["symbol"] == sym]
+        frames.append(
+            append_live_candle(
+                df_sym,
+                symbol=sym,
+                yfin_ticker=sym + ".NS",
+            )
+        )
+    df_live = pd.concat(frames, ignore_index=True)
+    df_live.sort_values(["symbol", "date"], inplace=True)
+    return df_live
+
 
 # ---------- Market Breadth tab ----------
 with tabs[0]:
@@ -110,33 +145,18 @@ with tabs[0]:
 
     constituents = get_constituents()
     symbols = constituents["Symbol"].unique().tolist()
-    data = fetch_cash(symbols)
+    data = cash_df[cash_df['symbol'].isin(symbols)]
     if data.empty:
         st.warning("No cash data returned.")
         st.stop()
-    
     data["date"] = pd.to_datetime(data["date"]) 
     
     
     
     # add today's candle for every symbol (loop once; still < 5 s)
-    frames = []
-    for sym in symbols:
-        df_sym = data[data["symbol"] == sym]
-        frames.append(
-    append_live_candle(
-        df_sym,
-        symbol       = sym,          # keep the symbol column consistent
-        yfin_ticker  = sym + ".NS"   # use .NS only for the Yahoo call
-        )
-    )
-        
-    data = pd.concat(frames, ignore_index=True)
-    
-    
-
+    data = build_cash_df(USE_LIVE)           
+ 
     # --- compute advance‑decline & EMA stats ---
-    data.sort_values(["symbol", "date"], inplace=True)
 
     # 20/50/100/200‑day EMAs
     for span in (20, 50, 100, 200):
@@ -217,204 +237,153 @@ with tabs[0]:
         showlegend=False,
     )
     st.plotly_chart(fig_ratio, use_container_width=True)
+                    
 
 
 with tabs[1]:
     st.header(f"📈 Open Interest Analysis — {TODAY_STR}")
     
-    FNO_URL = API_URL + "/fno_data"
-    headers = {"Authorization": "Bearer 1391"}
-    r = requests.get(FNO_URL, headers=headers)
-    
-    if r.status_code != 200:
-        st.error("❌ Failed to fetch F&O data.")
-    else:
-        df = pd.DataFrame(r.json())
-        df['date'] = pd.to_datetime(df['date'])
-        df['front_expiry'] = pd.to_datetime(df['front_expiry'])
-    
-        # Get latest date and corresponding expiry
-        latest_date = df['date'].max()
-        latest_expiry = df[df['date'] == latest_date]['front_expiry'].mode().iloc[0]
-    
-        # Previous expiry is the max expiry date before the latest expiry
-        prev_expiry = df[df['front_expiry'] < latest_expiry]['front_expiry'].max()
-    
-        st.write(f"Latest Expiry: `{latest_expiry.date()}` | Previous Expiry: `{prev_expiry.date()}`")
-    
-        # Filter data for the two expiry dates
-        latest_df = df[df['date'] == latest_date].set_index('symbol')
-        prev_df = df[df['front_expiry'] == prev_expiry].groupby('symbol').last()
-    
-        # existing code above ...
-        combined = latest_df[['combined_open_interest']].join(
-            prev_df[['combined_open_interest']],
-            lsuffix='_latest', rsuffix='_prev',
-            how='inner'
-        ).dropna()
-        
-        # --- NEW: pull cash closes for the exact two dates --------------------------
-        symbols_needed = combined.index.tolist()
-        
-        if not symbols_needed:
-            st.warning("No futures records for today's date yet; showing previous snapshot.")
-            st.stop()
-            
-        cash_df = fetch_cash(symbols_needed)          # uses the POST /cash_data
-    
-        cash_latest = (
-            cash_df[cash_df["date"] == latest_date]
-            .set_index("symbol")["close"]
-            .rename("cash_close_latest")
-        )
-                
-                
-        # add today's live bar for each symbol
-        frames = []
-        for sym in combined.index:              # only symbols already in combined
-            df_sym = cash_df[cash_df["symbol"] == sym]
-            frames.append(append_live_candle(df_sym, sym+'.NS'))
-        cash_df_live = pd.concat(frames, ignore_index=True)
-        
-        latest_date_live = cash_df_live["date"].max()
-        cash_latest = (
-            cash_df_live[cash_df_live["date"] == latest_date_live]
-                .set_index("symbol")["close"]
-                .rename("cash_close_latest")
-        )
-                
-        
-        
-        cash_prev = (
-            cash_df[cash_df["date"] == prev_expiry]
-            .set_index("symbol")["close"]
-            .rename("cash_close_prev")
-        )
-
-    
-        combined = combined.join([cash_latest, cash_prev]).dropna()
-    
-        # --- price & OI % changes using cash closes ---------------------------------
-        combined["price_change"] = (
-            (combined["cash_close_latest"] / combined["cash_close_prev"]) - 1
-        ).mul(100).round(1)
-        
-        combined["oi_change"] = (
-            (combined["combined_open_interest_latest"] /
-             combined["combined_open_interest_prev"]) - 1
-        ).mul(100).round(1)
-    
-               # ---------------------------------------------------------------------------
-        # 1) Identify the calendar window of the previous expiry
-        prev_dates   = df[df["front_expiry"] == prev_expiry]["date"].unique()
-        window_start = prev_dates.min()
-        window_end   = prev_expiry
-   
-        # ---------------------------------------------------------------------------
-        # 2) Pull CASH OHLC for all symbols over that window
-        symbols_needed = combined.index.tolist()      # the same symbols present in combined
-        
-        if not symbols_needed:
-            st.warning("No symbols after joining cash data; snapshot unchanged.")
-            st.stop()
-        
-        cash_all = fetch_cash(symbols_needed)         # uses POST /cash_data (cached 30-min)
-        
-        cash_window = cash_all[
-            (cash_all["date"] >= window_start) & (cash_all["date"] <= window_end)
-        ]
-        
-        # high & low of CASH closes within that window
+    fno_df['date'] = pd.to_datetime(fno_df['date'])
+    fno_df.sort_values(["symbol", "date"], inplace=True)
   
-        prev_high  =(
-            cash_window.groupby("symbol")["close"]
-            .max()
-            .rename("prev_high")
-        )
-        
-
-        prev_low = (
-            cash_window.groupby("symbol")["close"]
-            .min()
-            .rename("prev_low")
-        )
-        
-        # cash close on previous expiry day (already built earlier as `cash_prev`)
-        prev_close = cash_prev.rename("prev_close")
-        
-        # ---------------------------------------------------------------------------
-        # 3) Join these reference prices into combined
-        combined = combined.join([prev_high, prev_low, prev_close])
-        
-        # ---------------------------------------------------------------------------
-        # 4) Recompute the price_signal column based on CASH prices
-        def classify(row):
-            if row["cash_close_latest"] > row["prev_high"]:
-                return "price_above_high"
-            elif row["cash_close_latest"] > row["prev_close"]:
-                return "price_above_close"
-            elif row["cash_close_latest"] < row["prev_low"]:
-                return "price_below_low"
-            elif row["cash_close_latest"] < row["prev_close"]:
-                return "price_below_close"
-            else:
-                return None
-        
-        combined["price_signal"] = combined.apply(classify, axis=1)
-
-            
-        # # Join and compare
-        # combined = latest_df[['front_fut_close', 'combined_open_interest']].join(
-        #     prev_df[['front_fut_close', 'combined_open_interest']],
-        #     lsuffix='_latest', rsuffix='_prev',
-        #     how='inner'
-        # ).dropna()
+    latest_date = fno_df['date'].max()
+    fno_syms = fno_df[fno_df['date']==latest_date]['symbol'].to_list()
+    latest_expiry = fno_df[fno_df['date'] == latest_date]['front_expiry'].mode().iloc[0]
+     
+     # Previous expiry is the max expiry date before the latest expiry
+    prev_expiry = fno_df[fno_df['front_expiry'] < latest_expiry]['front_expiry'].max()
+     
+    st.write(f"Latest Expiry: {latest_expiry}| Previous Expiry Type: {prev_expiry}")
+     
+     # Filter data for the two expiry dates
+    latest_df = fno_df[fno_df['date'] == latest_date].set_index('symbol')
+    prev_df = fno_df[fno_df['front_expiry'] == prev_expiry].groupby('symbol').last()
     
-        # # Calculate percentage changes
-        # combined['price_change'] = round(100*((combined['front_fut_close_latest'] / combined['front_fut_close_prev']) - 1),1)
-        # combined['oi_change'] = round(100*((combined['combined_open_interest_latest'] / combined['combined_open_interest_prev']) - 1),1)
+    combined = latest_df[['combined_open_interest']].join(
+    prev_df[['combined_open_interest']],
+    lsuffix='_latest', rsuffix='_prev',
+    how='inner'
+    ).dropna()
     
-        # Classify into quadrants
-        conditions = [
-            (combined['price_change'] > 0) & (combined['oi_change'] > 0),
-            (combined['price_change'] < 0) & (combined['oi_change'] > 0),
-            (combined['price_change'] > 0) & (combined['oi_change'] < 0),
-            (combined['price_change'] < 0) & (combined['oi_change'] < 0),
-        ]
+    #cash_data = data[data['symbol'].isin(fno_syms)]      
+    
+    cash_data = build_cash_df(USE_LIVE)
+    cash_data = cash_data[cash_data["symbol"].isin(fno_syms)]
+    
+    cash_latest_date = cash_data['date'].sort_values().iloc[-1]
+    
+    cash_latest = (
+    cash_data[cash_data["date"] == cash_latest_date]
+    .set_index("symbol")["close"]
+    .rename("cash_close_latest")
+    )
+    
+    cash_prev = (
+    cash_data[cash_data["date"] == prev_expiry]
+    .set_index("symbol")["close"]
+    .rename("cash_close_prev")
+    )
+    
+    combined = combined.join([cash_latest, cash_prev]).dropna()
+
+    # --- price & OI % changes using cash closes ---------------------------------
+    combined["price_change"] = (
+    (combined["cash_close_latest"] / combined["cash_close_prev"]) - 1
+    ).mul(100).round(1)
+    
+    combined["oi_change"] = (
+    (combined["combined_open_interest_latest"] /
+     combined["combined_open_interest_prev"]) - 1
+    ).mul(100).round(1)
+     
+    # ---------------------------------------------------------------------------
+    # 1) Identify the calendar window of the previous expiry
+    prev_dates   = fno_df[fno_df["front_expiry"] == prev_expiry]["date"].unique()
+    window_start = prev_dates.min()
+    window_end   = prev_expiry
+    
+     # ---------------------------------------------------------------------------
+
+    
+     # 2) Pull CASH OHLC for all symbols over that window
+    symbols_needed = combined.index.tolist()      # the same symbols present in combined
+    
+    cash_window = cash_data[
+    (cash_data["date"] >= window_start) & (cash_data["date"] <= window_end)
+    ]
+    
+    # high & low of CASH closes within that window
+     
+    prev_high  =(
+    cash_window.groupby("symbol")["close"]
+    .max()
+    .rename("prev_expiry_high")
+    )
+    
+    
+    prev_low = (
+    cash_window.groupby("symbol")["close"]
+    .min()
+    .rename("prev_expiry_low")
+    )
+    
+    # cash close on previous expiry day (already built earlier as `cash_prev`)
+    prev_close = cash_prev.rename("prev_expiry_close")
+     
+     # ---------------------------------------------------------------------------
+     # 3) Join these reference prices into combined
+    combined = combined.join([prev_high, prev_low, prev_close])
+    
+    # ---------------------------------------------------------------------------
+    # 4) Recompute the price_signal column based on CASH prices
+    def classify(row):
+        if row["cash_close_latest"] > row["prev_expiry_high"]:
+            return "price_above_prev_expiry_high"
+        elif row["cash_close_latest"] > row["prev_expiry_close"]:
+            return "price_above_prev_expiry_close"
+        elif row["cash_close_latest"] < row["prev_expiry_low"]:
+            return "price_below_prev_exp_low"
+        elif row["cash_close_latest"] < row["prev_expiry_close"]:
+            return "price_below_prev_exp_close"
+        else:
+            return None
+    
+    combined["price_signal"] = combined.apply(classify, axis=1)
+    
+     # Classify into quadrants
+    conditions = [
+    (combined['price_change'] > 0) & (combined['oi_change'] > 0),
+    (combined['price_change'] < 0) & (combined['oi_change'] > 0),
+    (combined['price_change'] > 0) & (combined['oi_change'] < 0),
+    (combined['price_change'] < 0) & (combined['oi_change'] < 0),
+    ]
+    
+    
+    labels = [
+    "OI Up / Price Up",
+    "OI Up / Price Down",
+    "OI Down / Price Up",
+    "OI Down / Price Down"
+    ]
+    combined['quadrant'] = None
+    for cond, label in zip(conditions, labels):
+        combined.loc[cond, 'quadrant'] = label
+    
+    # Show each quadrant
+    for label in labels:
+        st.subheader(label)
+        st.dataframe(combined[combined['quadrant'] == label][[
+        'cash_close_prev', 'cash_close_latest', 'price_change',
+        'combined_open_interest_prev', 'combined_open_interest_latest', 'oi_change', 'price_signal'
+        ]].sort_values('price_change', ascending=False))
         
     
-        labels = [
-            "OI Up / Price Up",
-            "OI Up / Price Down",
-            "OI Down / Price Up",
-            "OI Down / Price Down"
-        ]
-        combined['quadrant'] = None
-        for cond, label in zip(conditions, labels):
-            combined.loc[cond, 'quadrant'] = label
+    labels = ['price_above_prev_expiry_high', 'price_below__prev_expiry_low', 'price_above_prev_expiry_close', 'price_below_prev_expiry_close']
     
-        # Show each quadrant
-        for label in labels:
-            st.subheader(label)
-            st.dataframe(combined[combined['quadrant'] == label][[
-                'cash_close_prev', 'cash_close_latest', 'price_change',
-                'combined_open_interest_prev', 'combined_open_interest_latest', 'oi_change', 'price_signal'
-            ]].sort_values('price_change', ascending=False))
-            
-            
-        labels = ['price_above_high', 'price_below_low', 'price_above_close', 'price_below_close']
-        
-        for label in labels:
-            st.subheader(label)
-            st.dataframe(combined[combined['price_signal']==label])
-            
-
-from plotly.subplots import make_subplots
-
-STOCK_URL   = API_URL + "/cash_ohlc"
-INDIC_URL   = API_URL + "/fno_indicators"
-INDEX_URL    = API_URL + "/index_data"
-INDEX_SYMBOL = "NIFTY 50"
+    for label in labels:
+        label_str = label.replace('_', ' ').replace('prev', 'previous').title()
+        st.subheader(label_str)
+        st.dataframe(combined[combined['price_signal']==label])
 
 
 # ----------------------------------------------------------------- Stock Explorer
@@ -422,15 +391,14 @@ INDEX_SYMBOL = "NIFTY 50"
 with tabs[2]:
     st.header(f"📉 Stock Explorer — {TODAY_STR}")
     
-    @st.cache_data(show_spinner=False, ttl=1800)
-    def get_fno_symbols():
-        resp = requests.get(API_URL + "/fno_data", headers={"Authorization": f"Bearer {API_TOKEN}"})
-        if resp.status_code == 200:
-            return pd.DataFrame(resp.json())["symbol"].unique().tolist()
-        return []               # fallback
-    
     nifty500_syms = get_constituents()["Symbol"].unique().tolist()
-    fno_syms      = get_fno_symbols()
+    
+    nifty_df = idx_df[idx_df['symbol']=='NIFTY 50']
+    nifty_df["date"]  = pd.to_datetime(nifty_df["date"])
+    
+    latest_date = fno_df['date'].max()
+    fno_syms = fno_df[fno_df['date']==latest_date]['symbol'].to_list()
+    #fno_syms      = get_fno_symbols()
     all_syms      = sorted(set(nifty500_syms) | set(fno_syms))
         
     choice        = st.selectbox("Choose a stock", all_syms, index=all_syms.index("RELIANCE") if "RELIANCE" in all_syms else 0)
@@ -441,28 +409,23 @@ with tabs[2]:
     win_map = {"1 M": 30, "3 M": 90, "6 M": 180, "12 M": 365, "All": 400}
     win_days = win_map[win_label]
 
-    # ----------- cached fetch ------------------------------------------------
-    @st.cache_data(show_spinner=True, ttl=1800)
-    def load_stock(sym):
-        headers = {"Authorization": "Bearer 1391"}
-        price = requests.post(STOCK_URL,  headers=headers, json={"symbol": sym}).json()
-        ind   = requests.post(INDIC_URL,  headers=headers, json={"symbol": sym}).json()
-        index = requests.post(INDEX_URL,  headers=headers, json={"symbol": INDEX_SYMBOL}).json()
-        return (pd.DataFrame(price), pd.DataFrame(ind), pd.DataFrame(index))
 
-    price_df, ind_df, index_df = load_stock(choice.upper())
+    #price_df = cash_df[cash_df['symbol']==choice.upper()]
+    
+    price_df = build_cash_df(USE_LIVE)
+    price_df = price_df[price_df["symbol"] == choice.upper()]
+    ind_df = fno_df[fno_df['symbol']==choice.upper()]
+    
+    
     if price_df.empty:
         st.warning("No price data found for this symbol.")
         st.stop()
 
-    price_df = append_live_candle(price_df, choice.upper(), yfin_ticker=choice.upper()+'.NS')
-    index_df = append_live_candle(index_df, INDEX_SYMBOL, yfin_ticker="^NSEI")
-    
 
     # ----------- prep & filtering -------------------------------------------
-    price_df["date"]  = pd.to_datetime(price_df["date"])
-    index_df["date"]  = pd.to_datetime(index_df["date"])
-    ind_df["date"]    = pd.to_datetime(ind_df["date"])
+    price_df["date"] = pd.to_datetime(price_df["date"])
+  
+    ind_df["date"] = pd.to_datetime(ind_df["date"])
     
     price_df["deliv_pct_smooth"] = (
     price_df["deliv_pct"]
@@ -473,17 +436,26 @@ with tabs[2]:
     # window filter
     cutoff = price_df["date"].max() - pd.Timedelta(days=win_days)
     price_df = price_df[price_df["date"] >= cutoff]
-    index_df = index_df[index_df["date"] >= cutoff]
+    select_nifty_df = nifty_df[nifty_df["date"] >= cutoff]
     ind_df   = ind_df[ind_df["date"] >= cutoff]
+        
+        
+    # ── NEW: enforce strict chronological order & dedup ----------------
+    price_df = price_df.sort_values("date").drop_duplicates("date")
+    select_nifty_df = select_nifty_df.sort_values("date").drop_duplicates("date")
+    # --------------------------------------------------------------------
     
     prev_close_price = price_df.loc[price_df["date"] == prev_expiry, "close"].squeeze()
 
     # align index close to price dates
     index_series = (
-        index_df.groupby("date")["close"].mean()
+        select_nifty_df.groupby("date")["close"].mean()
         .reindex(price_df["date"])
         .fillna(method="ffill")
     )
+    
+    st.write(price_df)
+    st.write(index_series)
 
     # --- rebasing to 100 at window start ------------------------------------
     reb_base_stock  = price_df["close"].iloc[0]
@@ -565,17 +537,6 @@ with tabs[2]:
                            x=0.02, y=0.12, showarrow=False)
 
   
-     # Row-4: Volume and delivery pct
-    fig.add_trace(
-    go.Bar(
-        x=price_df["date"],
-        y=price_df["volume"],
-        name="Volume",
-        marker_color="grey",
-    ),
-    row=4, col=1, secondary_y=False
-    )
-    
     
     fig.add_trace(
     go.Scatter(
@@ -602,7 +563,38 @@ with tabs[2]:
     
     fig.update_yaxes(title_text="Volume", row=4, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Deliv %", row=4, col=1, secondary_y=True)
-        
+            
+    
+        # after every trace has been added, just before update_layout
+    min_vol = price_df["volume"].min()
+    max_vol = price_df["volume"].max()
+    
+    fig.update_yaxes(
+        rangemode="normal",                # stop forcing to zero
+        range=[min_vol * 0.8, max_vol * 1.1],   # add ±20 % padding
+        row=4, col=1, secondary_y=False
+    )
+    
+    min_deliv = price_df["deliv_pct_smooth"].min()
+    max_deliv = price_df["deliv_pct_smooth"].max()
+    
+    fig.update_yaxes(
+        rangemode="normal",
+        range=[min_deliv * 0.9, max_deliv * 1.05],
+        row=4, col=1, secondary_y=True
+    )
+    
+    
+    if not ind_df.empty:
+        min_oi = ind_df["combined_open_interest"].min()
+        max_oi = ind_df["combined_open_interest"].max()
+    
+        fig.update_yaxes(
+            rangemode="normal",
+            range=[min_oi * 0.9, max_oi * 1.05],
+            row=3, col=1
+        )
+    
     # final cosmetics
     fig.update_layout(
         height=800,
@@ -611,3 +603,138 @@ with tabs[2]:
         margin=dict(t=40, b=40, l=20, r=20)
     )
     st.plotly_chart(fig, use_container_width=True)
+
+with tabs[3]:
+    
+    ## Calculations
+    
+    const_df = pd.read_csv("data/nifty_500_constituents.csv")
+    const_df["Sector"] = const_df["Sector"].str.strip()
+    sector_list = const_df["Sector"].unique().tolist()
+    
+    # restrict to 400-day window
+    idx_400 = idx_df[idx_df["date"] >= idx_df["date"].max() - pd.Timedelta(days=400)]
+
+    nifty_close = (
+        idx_400[idx_400["symbol"] == "NIFTY 50"]
+        .set_index("date")["close"]
+    )
+    
+    def rel_series(sym):
+        s = idx_400[idx_400["symbol"] == sym].set_index("date")["close"]
+        return (s / nifty_close.reindex(s.index)) * 100
+
+    official_syms = (
+        idx_400["symbol"].unique().tolist()
+    )
+    official_syms.remove("NIFTY 50")
+    
+    rel_official = {sym: rel_series(sym) for sym in official_syms}
+    rel_official_df = pd.DataFrame(rel_official)
+    
+    lookbacks = [1, 3, 5, 20, 60, 250]
+
+    def pct_return(s, d):
+        if len(s) < d+1:
+            return None
+        return round(((s.iloc[-1] / s.iloc[-d-1]) - 1) * 100,2)
+    
+    tbl = {
+        sym: [pct_return(rel_official_df[sym].dropna(), d) for d in lookbacks]
+        for sym in official_syms
+    }
+    official_table = pd.DataFrame(tbl, index=[f"{d}-day" for d in lookbacks]).T
+    
+    cash_400 = data[data["date"] >= data["date"].max() - pd.Timedelta(days=400)]
+    cash_400 = cash_400.merge(const_df[["Symbol", "Sector"]], left_on="symbol", right_on="Symbol")
+    
+    # 1️⃣  Prices matrix  (rows = date, cols = symbol)
+    prices = (
+        cash_400
+        .pivot(index="date", columns="symbol", values="close")
+        .sort_index()
+    )
+    rets = prices.pct_change().dropna(axis=0, how = 'all')   
+    sector_map = const_df.set_index("Symbol")["Sector"].to_dict()
+
+    sector_returns = {}
+    for sec, syms in const_df.groupby("Sector")["Symbol"]:
+        syms = [s for s in syms if s in rets.columns]  # keep only symbols with data
+        if len(syms):
+            sector_returns[sec] = rets[syms].mean(axis=1)
+    
+    sector_rets_df = pd.DataFrame(sector_returns)   # rows = date, cols = Sector
+    
+    # 5️⃣  Turn daily returns into an index, base 100
+    eq_sector_index = (1 + sector_rets_df).cumprod() * 100
+    
+    nifty_rets  = nifty_close.pct_change().dropna()
+    nifty_index = (1 + nifty_rets).cumprod() * 100
+    eq_sector_rel = eq_sector_index.divide(nifty_index, axis=0) * 100    
+    
+    tbl_eq = {
+    sec: [pct_return(eq_sector_rel[sec].dropna(), d) for d in lookbacks]
+    for sec in sector_list
+    }
+    
+    eq_table = pd.DataFrame(tbl_eq, index=[f"{d}-day" for d in lookbacks]).T
+        
+    st.header(f"📊 Sectoral Analysis — {TODAY_STR}")
+
+    st.subheader("Official Nifty Sector Indices vs Nifty (Relative)")
+    st.dataframe(official_table.style.format("{:.1f}%").background_gradient(cmap="RdYlGn"))
+
+    st.subheader("Granular Equal-Weight Sector Indices vs Nifty (Relative)")
+    st.dataframe(eq_table.style.format("{:.1f}%").background_gradient(cmap="RdYlGn"))
+
+    st.subheader("Relative Time-Series (select)")
+        # 1️⃣  choose window
+    win_label = st.radio(
+        "Look‑back window",
+        ["1 M", "3 M", "6 M", "12 M", "All"],
+        horizontal=True,
+        index=3,     # default = 12 M
+    )
+    win_map = {"1 M":30, "3 M":90, "6 M":180, "12 M":365, "All":None}
+    days_back = win_map[win_label]
+    
+    # 2️⃣  combined options list
+    all_options = official_syms + sector_list
+    default_sel = all_options[:3]   # show a few lines by default
+    chosen = st.multiselect("Select up to 10 indices / sectors", all_options,
+                            default=default_sel, max_selections=10)
+    if not chosen:
+        st.info("Choose at least one index / sector.")
+        st.stop()
+    
+    # 3️⃣  build combined dataframe (relative already vs Nifty)
+    combined_rel = pd.concat(
+        [rel_official_df, eq_sector_rel], axis=1, join="inner"
+    )
+    
+    # 4️⃣  slice by date window
+    if days_back:
+        date_cut = combined_rel.index.max() - pd.Timedelta(days=days_back)
+        combined_rel = combined_rel[combined_rel.index >= date_cut]
+    
+    # 5️⃣  select & rebase to 100 at window start
+    sel_df = combined_rel[chosen]
+    rebased = (sel_df / sel_df.iloc[0]) * 100
+        
+    sel_df = combined_rel[chosen]
+    rebased = (sel_df / sel_df.iloc[0]) * 100
+    
+    # build a simple Plotly figure
+    fig_sec = go.Figure()
+    for col in rebased.columns:
+        fig_sec.add_trace(
+            go.Scatter(x=rebased.index, y=rebased[col], mode="lines", name=col)
+        )
+    
+    # tighten y‑axis around data
+    ymin = rebased.min().min()
+    ymax = rebased.max().max()
+    fig_sec.update_yaxes(rangemode="normal", range=[ymin * 0.98, ymax * 1.02])
+    
+    fig_sec.update_layout(height=400, legend=dict(orientation="h"))
+    st.plotly_chart(fig_sec, use_container_width=True)
