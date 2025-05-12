@@ -2,6 +2,5 @@ streamlit
 pandas
 requests
 plotly
-Kiteconnect
-Webbrowser
+kiteconnect
 matplotlib>=3.8 
