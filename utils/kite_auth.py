@@ -17,11 +17,8 @@ import webbrowser
 #   KC_API_KEY, KC_API_SECRET, KC_ACCESS_TOKEN
 # KC_ACCESS_TOKEN is blank the very first time; you’ll generate it with the CLI below.
 
-secret    = st.secrets['kite']
-API_KEY = secret['api_key']
-API_SECRET = secret['api_secret']
-#ACCESS     = os.getenv("KC_ACCESS_TOKEN")      # may be ""
-#ACCESS = 'Yo3gfPOJv2HUD5INpMXDdyA649rtMaxH'
+API_KEY = st.secrets.get("kite", {}).get("api_key", None)
+API_SECRET = st.secrets.get("kite", {}).get("api_secret", None)
 
 # 2) -------------------------------------------------------------------------
 def manual_login() -> str:
