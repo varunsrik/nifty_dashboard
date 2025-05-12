@@ -2,5 +2,6 @@ streamlit
 pandas
 requests
 plotly
-yfinance
+Kiteconnect
+Webbrowser
 matplotlib>=3.8 

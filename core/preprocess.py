@@ -7,78 +7,58 @@ Created on Mon May  5 10:26:45 2025
 """
 
 # core/preprocess.py
-import pandas as pd, yfinance as yf, streamlit as st, datetime as dt
-from pandas.tseries.offsets import BDay
-from config import CACHE_LIVE_TTL
+import pandas as pd, streamlit as st, datetime as dt
+from config import CACHE_LIVE_TTL, CACHE_SQL_TTL
 from core.fetch import cash_all, index_all
-
+from core.live_zerodha import live_quotes, live_index_quotes
 
 TODAY = dt.date.today()
 TODAY_STR  = TODAY.strftime("%d %b %Y")
 
 
-def append_live_candle(df: pd.DataFrame, symbol: str, yfin_ticker: str | None = None):
-    """
-    Take an EOD dataframe (date-indexed) and attempt to
-    append today's OHLC/volume candle from yfinance.
-    If anything fails, the original df is returned untouched.
-    """
     
-    try:
-        # do nothing if we already have today's date in our SQL data
-        today_ts = pd.Timestamp.today().normalize()
-        if today_ts in df["date"].values:
-            return df
-
-        tick = yfin_ticker or symbol
-        live = yf.download(
-            tick, 
-            start=TODAY, end=TODAY + BDay(1),
-            progress=False, auto_adjust=False, interval="1d"
-        )
-        if live.empty:
-            return df                         # market closed or ticker invalid
-
-        live = live.reset_index()
-        live.rename(columns=str.lower, inplace=True)
-        live["symbol"] = symbol
-        live["date"]   = pd.to_datetime(live["date"])
-        live.columns = live.columns.get_level_values(0)
-
-        # yfinance columns: open high low close adj close volume
-        # keep only what's needed for each tab
-        # merge with original df (avoid duplicates)
-        cols_in_common = [c for c in df.columns if c in live.columns]
-        df_today = live[cols_in_common]
-
-        df_combined = (
-            pd.concat([df, df_today], ignore_index=True)
-              .drop_duplicates(subset=["date", "symbol"])
-              .sort_values("date")
-        )
-        return df_combined
-
-    except Exception as e:
-        # silent fail → return original EOD dataframe
-        print(f"yfinance fetch failed for {symbol}: {e}")
-        return df
-    
-
 @st.cache_data(ttl=CACHE_LIVE_TTL)
-def cash_with_live(use_live: bool) -> pd.DataFrame:
-    """
-    Return 400‑day cash dataframe.
-    If `use_live` is True, append today's candle for every symbol once per cache period.
-    """
-    df = cash_all().copy()
+def cash_with_live(use_live: bool):
+    df = cash_all()
     if not use_live:
         return df
 
-    frames = []
-    for sym in df["symbol"].unique():
-        frames.append(append_live_candle(df[df["symbol"] == sym], sym, sym + ".NS"))
-    return pd.concat(frames, ignore_index=True)
+    live_df = live_quotes(df["symbol"].unique().tolist())
+    if live_df.empty:
+        return df
 
+    combined = (
+        pd.concat([df, live_df], ignore_index=True)
+        .sort_values(["symbol", "date", "datetime"])
+        .drop_duplicates(subset=["symbol", "date"], keep="last")
+    )
+    return combined
+
+
+
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
+def index_with_live(use_live: bool) -> pd.DataFrame:
+    """
+    Historical index data (+today's live close if use_live==True).
+    """
+    hist = index_all()
+    if not use_live:
+        return hist
+
+    live_df = live_index_quotes(hist["symbol"].unique().tolist())
+    if live_df.empty:
+        return hist
+
+    combined = (
+        pd.concat([hist[hist["date"] != live_df["date"].iloc[0]], live_df],
+                  ignore_index=True)
+          .sort_values(["symbol", "date"])
+          .reset_index(drop=True)
+    )
+    return combined
+
+
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 def compute_adv_decl(cash_df: pd.DataFrame):
     """
     Return two dataframes:
@@ -122,6 +102,7 @@ def compute_adv_decl(cash_df: pd.DataFrame):
 
 
 
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 def official_sector(idx_df: pd.DataFrame):
     # restrict to 400-day window
     idx_400 = idx_df[idx_df["date"] >= idx_df["date"].max() - pd.Timedelta(days=400)]
@@ -161,7 +142,8 @@ def official_sector(idx_df: pd.DataFrame):
 
 
 
-def equal_weight_sector(cash_df: pd.DataFrame, const_df: pd.DataFrame):
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
+def equal_weight_sector(cash_df: pd.DataFrame, const_df: pd.DataFrame, idx_df: pd.DataFrame):
     """
     Returns:
       eq_sector_rel  – dataframe of equal‑weight sector indices vs Nifty
@@ -188,7 +170,7 @@ def equal_weight_sector(cash_df: pd.DataFrame, const_df: pd.DataFrame):
     sector_rets_df = pd.DataFrame(sector_returns)
     eq_sector_idx   = (1 + sector_rets_df).cumprod() * 100
 
-    nifty_close = index_all()
+    nifty_close = idx_df
     nifty_close = (
         nifty_close[nifty_close["symbol"] == "NIFTY 50"]
         .set_index("date")["close"]
@@ -213,6 +195,7 @@ def equal_weight_sector(cash_df: pd.DataFrame, const_df: pd.DataFrame):
 
 
 
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 def fno_oi_processing(fno_df, cash_df):
     fno_df.sort_values(["symbol", "date"], inplace=True)
   
@@ -330,8 +313,10 @@ def fno_oi_processing(fno_df, cash_df):
     for cond, label in zip(conditions, labels):
         combined.loc[cond, 'quadrant'] = label
     
-    return combined, prev_expiry
+    return combined, prev_expiry, latest_expiry, cash_latest_date
 
+
+@st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 def stock_explorer_processing(cash_df, choice, fno_df, win_days, nifty_df, prev_expiry):
     price_df = cash_df.copy()
     price_df = price_df[price_df["symbol"] == choice.upper()]
@@ -375,9 +360,6 @@ def stock_explorer_processing(cash_df, choice, fno_df, win_days, nifty_df, prev_
         .fillna(method="ffill")
     )
     
-    st.write(price_df)
-    st.write(index_series)
-
     # --- rebasing to 100 at window start ------------------------------------
     reb_base_stock  = price_df["close"].iloc[0]
     reb_base_index  = index_series.iloc[0]

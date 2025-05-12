@@ -11,6 +11,8 @@ import pandas as pd
 import streamlit as st
 from datetime import timedelta
 from core.fetch import fno_stock_all, fno_index_all, cash_all, index_all
+from core.live_zerodha import atm_straddle, get_kite
+from typing import Union
      # we already cache both
 
 
@@ -72,7 +74,7 @@ def straddle_tables():
 
     for sym, sub in idx_df.groupby("symbol"):
         sub = sub.copy()
-        if sym.upper() == "NIFTY":       # two rows: weekly & monthly
+        if sym.upper() == "NIFTY":   # two rows: weekly & monthly
             idx_rows.append(
                 _change_cols(
                     sub, "front_weekly_straddle_price", "front_weekly_straddle_iv"
@@ -101,6 +103,75 @@ def straddle_tables():
                 _change_cols(sub, "front_straddle_price", "front_straddle_iv").rename(sym)
             )
     stk_tbl = pd.DataFrame(stk_rows)
+    
+    #     # ── live override (optional toggle) ─────────────────────────────
+    # if st.session_state.get("use_live"):      # use the sidebar toggle you already have
+    #     for sym in idx_tbl.index.tolist() + stk_tbl.index.tolist():
+    #         weekly_flag = False
+    #         if 'WEEKLY' in sym or 'MONTHLY' in sym:
+        
+    #             sym_final = sym.replace(" – WEEKLY","").replace(" – MONTHLY","")
+    #             if sym == 'NIFTY - WEEKLY':
+    #                 weekly_flag = True
+    #         else:
+    #             sym_final = sym
+        
+    #         live = atm_straddle(sym_final, weekly = weekly_flag)
+    #         if live:
+    #             tbl = idx_tbl if sym in idx_tbl.index else stk_tbl
+    #             tbl.loc[sym, "Straddle"] = live["price"]
+    #             tbl.loc[sym, "IV"]       = live["iv"]
+
+    # return idx_tbl, stk_tbl
+
+
+        # ── live override (optional toggle) ─────────────────────────────
+    if st.session_state.get("use_live"):
+
+        lookbacks = [1, 2, 3, 5]     # mapping to column suffixes
+        # helper ------------------------------------------------------
+        def recalc_changes(df_src, sym, live_price, live_iv, price_col, iv_col):
+            sub = df_src[df_src["symbol"] == sym].sort_values("date")
+            closes = sub[price_col].tolist() + [live_price]     # append live
+            ivs    = sub[iv_col].tolist()    + [live_iv]
+
+            row = {}
+            for lb in lookbacks:
+                if len(closes) > lb:
+                    row[f"Δ{lb} d %"] = round(((closes[-1] / closes[-lb-1]) - 1) * 100, 2)
+                    row[f"Δ{lb} d IV"] = round(ivs[-1] - ivs[-lb-1], 2)
+            return row
+
+        # loop all table rows ----------------------------------------
+        for sym in idx_tbl.index.tolist() + stk_tbl.index.tolist():
+
+            weekly_flag = "WEEKLY" in sym
+            sym_clean   = sym.replace(" – WEEKLY","").replace(" – MONTHLY","")
+            live = atm_straddle(sym_clean, weekly=weekly_flag)
+            if not live:
+                continue
+
+            # choose source dataframe + column names
+            if sym in idx_tbl.index:
+                tbl      = idx_tbl
+                df_src   = idx_df
+                price_c  = "front_weekly_straddle_price" if weekly_flag else "front_monthly_straddle_price"
+                iv_c     = price_c.replace("price", "iv")
+            else:
+                tbl      = stk_tbl
+                df_src   = stock_df
+                price_c  = "front_straddle_price"
+                iv_c     = "front_straddle_iv"
+
+            # overwrite latest level
+            tbl.loc[sym, "Straddle"] = live["price"]
+            tbl.loc[sym, "IV"]       = live["iv"]
+
+            # recompute Δ columns
+            delta_vals = recalc_changes(df_src, sym_clean, live["price"], live["iv"],
+                                        price_c, iv_c)
+            for col, val in delta_vals.items():
+                tbl.loc[sym, col] = val
 
     return idx_tbl, stk_tbl
 
@@ -151,30 +222,73 @@ def straddle_timeseries(symbol: str) -> pd.DataFrame:
       .rename(columns={price_col: "price", iv_col: "iv"})
       .sort_values("date")
       .reset_index(drop=True))
+    
+    
+    # ---------- live append ---------------------------------------------
+    if st.session_state.get("use_live"):
+        live = atm_straddle(sym_clean, weekly=is_weekly)
+        if live and live["price"] is not None:
+            today = pd.Timestamp.today().normalize()
+            new_row = pd.DataFrame(
+                {"date": [today], "price": [live["price"]], "iv": [live["iv"]]}
+            )
+            # overwrite today if already present
+            ts = (
+            pd.concat([ts[ts["date"] != today], new_row], ignore_index=True)
+              .sort_values("date")
+              .reset_index(drop=True)
+              )
+
     return ts
 
-def price_timeseries(symbol: str, start_date, end_date):
+
+index_symbol_dict = {
+    "NIFTY":     "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "FINNIFTY":  "NIFTY FIN SERVICE",
+}
+
+def price_timeseries(
+    symbol: str,
+    start_date: Union[str, pd.Timestamp],
+    end_date:   Union[str, pd.Timestamp],
+    cash_df: pd.DataFrame,
+    idx_df:  pd.DataFrame,
+) -> pd.DataFrame:
     """
-    Return a price dataframe for the symbol covering [start_date, end_date].
-    Stocks → cash table, indices → index table. Re-index to keep only window.
+    Slice price dataframe for [start_date, end_date].
+
+    `cash_df` should be the output of cash_with_live(...),
+    so it already contains today's candle when live is on.
     """
-    
-    index_symbol_dict = {
-        'NIFTY': 'NIFTY 50',
-        'BANKNIFTY': 'NIFTY BANK',
-        'FINNIFTY': 'NIFTY FIN SERVICE'
-        }
-    
     sym_clean = symbol.split(" – ")[0]
-    if sym_clean in list(index_symbol_dict.keys()):
-        sym_clean = index_symbol_dict[sym_clean]
-        
-    if sym_clean in index_all()["symbol"].unique():
-        df = index_all()
-        df = df[df["symbol"] == sym_clean][["date","close"]]
+    mapped    = index_symbol_dict.get(sym_clean, sym_clean)
+
+    # ---------- index branch -------------------------------------------------
+    if mapped in idx_df["symbol"].unique():
+        df = idx_df[idx_df["symbol"] == mapped][["date", "close"]].copy()
+
+        # append live index quote if toggle ON
+        if st.session_state.get("use_live"):
+            kite = get_kite()
+            tag  = f"NSE:{mapped}"
+            try:
+                live_px = kite.quote(tag)[tag]["last_price"]
+                today   = pd.Timestamp.today().normalize()
+                df = (
+                    pd.concat([df[df["date"] != today],
+                               pd.DataFrame({"date": [today], "close": [live_px]})],
+                              ignore_index=True)
+                      .sort_values("date")
+                )
+            except Exception as e:
+                st.warning(f"Live index quote failed for {mapped}: {e}")
+
+    # ---------- stock branch -------------------------------------------------
     else:
-        df = cash_all()
-        df = df[df["symbol"] == sym_clean]
+        df = cash_df[cash_df["symbol"] == mapped][
+            ["date", "open", "high", "low", "close", "volume"]
+        ].copy()
 
     mask = (df["date"] >= start_date) & (df["date"] <= end_date)
-    return df.loc[mask].copy().sort_values("date")
+    return df.loc[mask].sort_values("date").reset_index(drop=True)
