@@ -8,7 +8,7 @@ Created on Mon May  5 10:26:45 2025
 
 # core/preprocess.py
 import pandas as pd, streamlit as st, datetime as dt
-from config import CACHE_LIVE_TTL, CACHE_SQL_TTL
+from app_config import CACHE_LIVE_TTL, CACHE_SQL_TTL
 from core.fetch import cash_all, index_all
 from core.live_zerodha import live_quotes, live_index_quotes
 

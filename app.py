@@ -1,7 +1,8 @@
 import pandas as pd
 import streamlit as st
 import datetime as dt
-from core.fetch import fno_stock_all, get_constituents
+import re
+from core.fetch import fno_stock_all, get_constituents, read_intraday, get_intraday_symbols
 from core.straddles import straddle_tables, straddle_timeseries, price_timeseries
 from core.preprocess import (
     cash_with_live,
@@ -18,6 +19,9 @@ from plots.stock_explorer import stock_explorer_figure
 from plots.sector import sector_figure
 from plots.straddle import straddle_figure
 from core.sector import constituent_returns
+from core.fno_utils import classify_futures
+from app_config import INDEX_SYMBOLS
+import plotly.graph_objects as go
 
 
 
@@ -61,7 +65,7 @@ if st.sidebar.button("🔄 Update prices", help="Clear live caches and refresh")
     
 # =============================================================================
 
-tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis", "Straddle Prices"])
+tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis", "Straddle Prices", "⏱️ Intraday"])
 
 cash_df = cash_with_live(USE_LIVE)
 idx_df  = index_with_live(USE_LIVE)
@@ -249,7 +253,6 @@ with tabs[4]:
     chosen_sym = st.selectbox("Choose straddle symbol", symbols_dropdown, index=0)
 
     ts_df = straddle_timeseries(chosen_sym)
-    st.write(ts_df)
     if ts_df.empty:
         st.info("No straddle data for this symbol / expiry.")
     else:
@@ -261,8 +264,148 @@ with tabs[4]:
             idx_df
             )
         
-        st.write(price_df)
         st.plotly_chart(
             straddle_figure(ts_df, price_df, f"{chosen_sym} — Current Expiry"),
             use_container_width=True
         )
+        
+
+
+# ─────────────────── Intraday tab ───────────────────────────────
+with tabs[5]:
+    st.header(f"⏱️ Intraday – {TODAY_STR}")
+    st.markdown(f"**Last live update:** {st.session_state['last_update'].strftime('%H:%M:%S')}")
+
+    available_syms = get_intraday_symbols()
+        
+    front_fut, back_fut, far_fut = classify_futures(available_syms)
+    all_fut = front_fut + back_fut + far_fut
+
+    index_symbols = INDEX_SYMBOLS
+    
+    # 1️⃣  fetch bars ---------------------------------------------------------
+    syms_needed = ["NIFTY 50", "NIFTY"]          # spot + fut for basis
+    cash_bars   = read_intraday([*get_constituents()["Symbol"].unique(),])
+    index_bars = read_intraday(index_symbols)
+    fut_bars = read_intraday(all_fut)
+
+    nifty_bars  = index_bars[index_bars["symbol"] == "NIFTY 50"]
+    nifty_fut_bars = fut_bars[fut_bars["symbol"] == "NIFTY25MAYFUT"]
+
+
+    # ------------------------------------------------------------------
+    # 3️⃣  Intraday Advance / Decline  vs  Nifty spot
+    # ------------------------------------------------------------------
+    
+    # ---- 3.1  yesterday’s closes -------------------------------------
+    if USE_LIVE:
+        prev_eod_date = cash_df["date"].iloc[:-1].max()   # cash_df is your 400-day EOD frame
+    else:
+        prev_eod_date = cash_df["date"].max()
+    prev_closes = (
+        cash_df[cash_df["date"] == prev_eod_date]
+        .set_index("symbol")["close"]
+    )
+    
+    # keep only symbols that also appear in today’s minute feed
+    cash_bars = cash_bars[cash_bars["symbol"].isin(prev_closes.index)]
+    cash_bars["prev_close"] = cash_bars["symbol"].map(prev_closes)
+    
+    # ---- 3.2  classify each minute -----------------------------------
+    cash_bars["dir"] = cash_bars["close"] - cash_bars["prev_close"]  # +, 0, −
+    
+    adv = (
+        cash_bars.groupby("datetime")["dir"]
+                 .apply(lambda s: (s > 0).sum())
+    )
+    dec = (
+        cash_bars.groupby("datetime")["dir"]
+                 .apply(lambda s: (s < 0).sum())
+    )
+    ad_ratio = (adv - dec).rename("A/D").reset_index()
+    
+    # ---- 3.3  plot ---------------------------------------------------
+    fig2 = go.Figure()
+    fig2.add_trace(
+        go.Scatter(x=ad_ratio["datetime"], y=ad_ratio["A/D"],
+                   name="Advance-Decline", yaxis="y1")
+    )
+    fig2.add_trace(
+        go.Scatter(x=nifty_bars["datetime"], y=nifty_bars["close"],
+                   name="Nifty spot", yaxis="y2", line=dict(dash="dot"))
+    )
+    fig2.update_layout(
+        title="Intraday A/D vs Nifty (vs yesterday’s close)",
+        yaxis=dict(title="A-D"),                        # primary axis
+        yaxis2=dict(title="Nifty", overlaying="y", side="right"),
+        height=300, legend=dict(orientation="h")
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+    
+    # 4️⃣  Basis chart --------------------------------------------------------
+  
+
+# ---- 4.1  pick a future symbol ------------------------------------
+    all_futs = sorted(fut_bars["symbol"].unique())          # e.g.  RELIANCE25JUNFUT
+    sel_fut  = st.selectbox("Choose a future", all_futs, index=0)
+
+# ---- 4.2  derive the spot/underlying symbol -----------------------
+    def underlying(sym_fut: str) -> str:
+        """
+        Strip the YYMONFUT suffix, then map index aliases to cash symbol.
+        """
+        base = re.sub(r"\d{2}[A-Z]{3}FUT$", "", sym_fut)   # RELIANCE, NIFTY,…
+    
+        index_map = {
+            "NIFTY": "NIFTY 50",
+            "BANKNIFTY": "NIFTY BANK",
+            "FINNIFTY": "NIFTY FIN SERVICE",
+        }
+        return index_map.get(base, base)                  # stocks stay unchanged
+
+    spot_sym = underlying(sel_fut)
+
+# ---- 4.3  slice todays minute bars -------------------------------
+    fut_sel  = fut_bars[fut_bars["symbol"] == sel_fut]
+    spot_sel = (index_bars if spot_sym in index_symbols else cash_bars)
+    spot_sel = spot_sel[spot_sel["symbol"] == spot_sym]
+    
+    if fut_sel.empty or spot_sel.empty:
+        st.warning("No intraday data for that selection yet.")
+        st.stop()
+    
+    # Align on common timestamps
+    merged = pd.merge(
+        fut_sel[["datetime", "close"]],
+        spot_sel[["datetime", "close"]],
+        on="datetime", how="inner", suffixes=("_fut", "_spot")
+    )
+    merged["basis"] = merged["close_fut"] - merged["close_spot"]
+
+    # ---- 4.4  plot basis (y1) + spot price (y2) ----------------------
+    fig3 = go.Figure()
+    
+    fig3.add_trace(
+        go.Scatter(
+            x=merged["datetime"], y=merged["basis"],
+            mode="lines", name=f"{sel_fut} basis", yaxis="y1"
+        )
+    )
+    fig3.add_trace(
+        go.Scatter(
+            x=merged["datetime"], y=merged["close_spot"],
+            mode="lines", line=dict(dash="dot"),
+            name=f"{spot_sym} spot", yaxis="y2"
+        )
+    )
+    
+    fig3.update_layout(
+        title=f"Intraday Basis – {sel_fut} vs {spot_sym}",
+        yaxis=dict(title="Basis (₹)"),
+        yaxis2=dict(title="Spot", overlaying="y", side="right", showgrid=False),
+        height=300,
+        legend=dict(orientation="h"),
+        margin=dict(t=40, b=20, l=20, r=20),
+    )
+    
+    st.plotly_chart(fig3, use_container_width=True)

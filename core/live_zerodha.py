@@ -12,7 +12,7 @@ from pathlib import Path
 from utils.kite_auth import get_kite
 import datetime as dt
 import numpy as np
-from config import CACHE_LIVE_TTL
+from app_config import CACHE_LIVE_TTL
 
 MASTER_URL   = "https://api.kite.trade/instruments"
 MASTER_FILE  = Path("data/instruments.csv")
