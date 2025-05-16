@@ -12,3 +12,4 @@ API_TOKEN = "1391"
 
 CACHE_SQL_TTL  = "6h"   # long cache for SQL API pulls
 CACHE_LIVE_TTL = 900    # 15 min cache for live calls
+CACHE_INTRADAY_LIVE_TTL = 60
