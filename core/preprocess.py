@@ -350,8 +350,13 @@ def stock_explorer_processing(cash_df, choice, fno_df, win_days, nifty_df, prev_
     price_df = price_df.sort_values("date").drop_duplicates("date")
     select_nifty_df = select_nifty_df.sort_values("date").drop_duplicates("date")
     # --------------------------------------------------------------------
+    sel =  price_df.loc[price_df["date"] == prev_expiry, "close"]
     
-    prev_close_price = price_df.loc[price_df["date"] == prev_expiry, "close"].squeeze()
+        
+    if sel.empty:
+        prev_close_price = None                # nothing to draw
+    else:
+        prev_close_price = float(sel.iloc[0])  # take the first value
 
     # align index close to price dates
     index_series = (

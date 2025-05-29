@@ -49,14 +49,15 @@ def stock_explorer_figure(choice, price_df, ind_df, rebased_stock, rebased_index
         row=2, col=1
     )
     
-    fig.add_hline(
-    y=prev_close_price,
-    line_dash="dash",
-    line_color="orange",
-    annotation_text="Prev Expiry Close",
-    annotation_position="top left",
-    row=1, col=1
-    )
+    if prev_close_price is not None:
+        fig.add_hline(
+        y=prev_close_price,
+        line_dash="dash",
+        line_color="orange",
+        annotation_text="Prev Expiry Close",
+        annotation_position="top left",
+        row=1, col=1
+        )
     
     # remove Sat/Sun gaps + any other blank days
     fig.update_xaxes(
