@@ -12,6 +12,18 @@ import pandas as pd
 
 
 def stock_explorer_figure(choice, price_df, ind_df, rebased_stock, rebased_index, prev_close_price, win_label):
+        # ---------- make prev_close a clean scalar ---------------------------
+    if isinstance(prev_close_price, pd.Series):
+        # take first non-NA value, else set None
+        prev_close_price = (
+            prev_close_price.dropna().iloc[0]
+            if not prev_close_price.dropna().empty else None
+        )
+    elif pd.isna(prev_close_price):
+        prev_close_price = None
+        
+        
+    
     fig = make_subplots(
         rows=4, cols=1,
         shared_xaxes=True,
@@ -51,7 +63,7 @@ def stock_explorer_figure(choice, price_df, ind_df, rebased_stock, rebased_index
     
     if prev_close_price is not None:
         fig.add_hline(
-        y=prev_close_price,
+        y=float(prev_close_price),
         line_dash="dash",
         line_color="orange",
         annotation_text="Prev Expiry Close",
