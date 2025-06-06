@@ -32,9 +32,21 @@ def classify_futures(symbols: list[str]) -> tuple[list[str], list[str], list[str
 
     fut = fut[fut["expiry"] >= today].sort_values("expiry")
     unique_expiries = fut["expiry"].drop_duplicates().iloc[:3]     # at most 3
+    
+    if unique_expiries.empty:
+        return [], [], []                          # nothing collected yet
 
-    front  = fut[fut["expiry"] == unique_expiries.iloc[0]].tradingsymbol.tolist()
-    back   = fut[fut["expiry"] == unique_expiries.iloc[1]].tradingsymbol.tolist() if len(unique_expiries) > 1 else []
-    far    = fut[fut["expiry"] == unique_expiries.iloc[2]].tradingsymbol.tolist() if len(unique_expiries) > 2 else []
 
+    
+    front = fut[fut["expiry"] == unique_expiries.iloc[0]].tradingsymbol.tolist()
+    back  = (
+        fut[fut["expiry"] == unique_expiries.iloc[1]].tradingsymbol.tolist()
+        if len(unique_expiries) > 1 else []
+    )
+    far   = (
+        fut[fut["expiry"] == unique_expiries.iloc[2]].tradingsymbol.tolist()
+        if len(unique_expiries) > 2 else []
+    )
     return front, back, far
+
+
