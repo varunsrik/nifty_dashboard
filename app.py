@@ -294,8 +294,18 @@ with tabs[5]:
     
     if USE_LIVE:
         # live_bars = cash_bars from earlier;  combined = the reference table
-        breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(cash_bars, combined)
-    
+        breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(
+        reference = combined,      # the same combined table
+        live_bars = cash_bars      # today’s minute data
+    )
+      
+        
+    else:
+        
+        breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(
+        reference = combined,      # live_bars=None → EOD mode
+    )
+        
         st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
         if breakout_close_df.empty and breakout_high_df.empty:
             st.info("Nothing yet.")
