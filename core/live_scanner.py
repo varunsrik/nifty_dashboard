@@ -50,20 +50,22 @@ def scan_prev_expiry_cross(
     joined = joined.merge(prev_day, left_on="symbol", right_index=True)
 
     # -------- breakout / breakdown flags ----------------------------------
-    breakout = joined[
+    breakout_close = joined[
         (joined["cash_close_latest"] <= joined["prev_expiry_close"]) &    # was ≤
-        (joined["live_close"]          > joined["prev_expiry_close"])
-        |
+        (joined["live_close"]          > joined["prev_expiry_close"])].copy()
+    
+    breakout_high = joined[
         (joined["cash_close_latest"] <= joined["prev_expiry_high"])  &
         (joined["live_close"]          > joined["prev_expiry_high"])
     ].copy()
 
-    breakdown = joined[
+    breakdown_close = joined[
         (joined["cash_close_latest"] >= joined["prev_expiry_close"]) &    # was ≥
-        (joined["live_close"]          < joined["prev_expiry_close"])
-        |
+        (joined["live_close"]          < joined["prev_expiry_close"])].copy()
+    
+    breakdown_low = joined[
         (joined["cash_close_latest"] >= joined["prev_expiry_low"])    &
         (joined["live_close"]          < joined["prev_expiry_low"])
     ].copy()
 
-    return breakout, breakdown
+    return breakout_close, breakout_high, breakdown_close, breakdown_low

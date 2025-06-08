@@ -294,28 +294,48 @@ with tabs[5]:
     
     if USE_LIVE:
         # live_bars = cash_bars from earlier;  combined = the reference table
-        breakout_df, breakdown_df = scan_prev_expiry_cross(cash_bars, combined)
+        breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(cash_bars, combined)
     
         st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
-        if breakout_df.empty:
+        if breakout_close_df.empty and breakout_high_df.empty:
             st.info("Nothing yet.")
         else:
             st.dataframe(
-                breakout_df[["symbol", "live_close",
+                breakout_close_df[["symbol", "live_close",
                              "prev_expiry_high", "prev_expiry_close"]]
                   .rename(columns={
-                      "live_close": "price_now",
-                      "prev_expiry_high": "prev_high",
-                      "prev_expiry_close": "prev_close"
+                      "live_close": "price now",
+                      "prev_expiry_high": "previous expiry high",
+                      "prev_expiry_close": "previous expiry close"
+                  })
+            )
+            
+            st.dataframe(
+                breakout_high_df[["symbol", "live_close",
+                             "prev_expiry_high", "prev_expiry_close"]]
+                  .rename(columns={
+                      "live_close": "price now",
+                      "prev_expiry_high": "previous expiry high",
+                      "prev_expiry_close": "previous expiry close"
                   })
             )
     
         st.subheader("🔔 Intraday Break-downs (prev-expiry levels)")
-        if breakdown_df.empty:
+        if breakdown_close_df.empty and breakdown_low_df.empty:
             st.info("Nothing yet.")
         else:
             st.dataframe(
-                breakdown_df[["symbol", "live_close",
+                breakdown_close_df[["symbol", "live_close",
+                              "prev_expiry_low", "prev_expiry_close"]]
+                  .rename(columns={
+                      "live_close": "price_now",
+                      "prev_expiry_low": "prev_low",
+                      "prev_expiry_close": "prev_close"
+                  })
+            )
+            
+            st.dataframe(
+                breakdown_low_df[["symbol", "live_close",
                               "prev_expiry_low", "prev_expiry_close"]]
                   .rename(columns={
                       "live_close": "price_now",
