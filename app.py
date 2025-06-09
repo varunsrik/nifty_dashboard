@@ -310,11 +310,12 @@ with tabs[5]:
     st.write(breakdown_close_df)
     st.write(breakdown_low_df)
     st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
+    
     if breakout_close_df.empty and breakout_high_df.empty:
         st.info("Nothing yet.")
     else:
         st.dataframe(
-            breakout_close_df[["symbol", "now_price",
+            breakout_close_df[["now_price",
                          "prev_expiry_high", "prev_expiry_close"]]
               .rename(columns={
                   "live_close": "price now",
