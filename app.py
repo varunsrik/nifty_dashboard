@@ -305,70 +305,20 @@ with tabs[5]:
         breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(
         reference = combined,      # live_bars=None → EOD mode
     )
-    st.write(breakout_close_df) 
-    st.write(breakout_high_df)
-    st.write(breakdown_close_df)
-    st.write(breakdown_low_df)
-    st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
-    
-    if breakout_close_df.empty and breakout_high_df.empty:
-        st.info("Nothing yet.")
-    else:
         
-        cols = ["symbol", "now_price", "prev_expiry_high", "prev_expiry_close"]
-        
-        df_show = (
-            breakout_close_df          # or any of the other tables
-            .reset_index()             # moves index → column
-            .loc[:, cols]              # now 'symbol' is present
-            .rename(columns={
-                "now_price": "Price now",
-                "prev_expiry_high": "Prev high",
-                "prev_expiry_close": "Prev close",
-            })
-        )
-
-        st.dataframe(df_show)
-        
-        st.dataframe(
-            breakout_close_df[["now_price",
-                         "prev_expiry_high", "prev_expiry_close"]])
-        
-        
-        #       .rename(columns={
-        #           "now_price": "price now",
-        #           "prev_expiry_high": "previous expiry high",
-        #           "prev_expiry_close": "previous expiry close"
-        #       })
-        # )
-        
-        st.dataframe(
-            breakout_high_df[["now_price",
-                         "prev_expiry_high", "prev_expiry_close"]])
             
-    # st.subheader("🔔 Intraday Break-downs (prev-expiry levels)")
-    # if breakdown_close_df.empty and breakdown_low_df.empty:
-    #     st.info("Nothing yet.")
-    # else:
-    #     st.dataframe(
-    #         breakdown_close_df[["symbol", "now_price",
-    #                       "prev_expiry_low", "prev_expiry_close"]]
-    #           .rename(columns={
-    #               "now_price": "price_now",
-    #               "prev_expiry_low": "prev_low",
-    #               "prev_expiry_close": "prev_close"
-    #           })
-    #     )
+    cols = ["now_price", "prev_expiry_high", "prev_expiry_close"]
         
-    #     st.dataframe(
-    #         breakdown_low_df[["symbol", "now_price",
-    #                       "prev_expiry_low", "prev_expiry_close"]]
-    #           .rename(columns={
-    #               "now_price": "price_now",
-    #               "prev_expiry_low": "prev_low",
-    #               "prev_expiry_close": "prev_close"
-    #           })
-    #     )
+    st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
+    st.write('Price Crossing Above Previous Expiry Highest Close')
+    st.write(breakout_high_df.index)
+    st.write(breakout_high_df[cols])
+    st.write('Price Crossing Above Previous Expiry Close')
+    st.write(breakout_close_df[cols]) 
+    st.write('Price Crossing Below Previous Expiry Close')
+    st.write(breakdown_close_df[cols])
+    st.write('Price Crossing Below Previous Expiry Lowest Close')
+    st.write(breakdown_low_df[cols])
 
 
     # ------------------------------------------------------------------
