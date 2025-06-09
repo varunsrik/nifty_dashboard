@@ -311,7 +311,7 @@ with tabs[5]:
             st.info("Nothing yet.")
         else:
             st.dataframe(
-                breakout_close_df[["symbol", "live_close",
+                breakout_close_df[["symbol", "now_price",
                              "prev_expiry_high", "prev_expiry_close"]]
                   .rename(columns={
                       "live_close": "price now",
@@ -321,10 +321,10 @@ with tabs[5]:
             )
             
             st.dataframe(
-                breakout_high_df[["symbol", "live_close",
+                breakout_high_df[["symbol", "now_price",
                              "prev_expiry_high", "prev_expiry_close"]]
                   .rename(columns={
-                      "live_close": "price now",
+                      "now_price": "price now",
                       "prev_expiry_high": "previous expiry high",
                       "prev_expiry_close": "previous expiry close"
                   })
@@ -335,20 +335,20 @@ with tabs[5]:
             st.info("Nothing yet.")
         else:
             st.dataframe(
-                breakdown_close_df[["symbol", "live_close",
+                breakdown_close_df[["symbol", "now_price",
                               "prev_expiry_low", "prev_expiry_close"]]
                   .rename(columns={
-                      "live_close": "price_now",
+                      "now_price": "price_now",
                       "prev_expiry_low": "prev_low",
                       "prev_expiry_close": "prev_close"
                   })
             )
             
             st.dataframe(
-                breakdown_low_df[["symbol", "live_close",
+                breakdown_low_df[["symbol", "now_price",
                               "prev_expiry_low", "prev_expiry_close"]]
                   .rename(columns={
-                      "live_close": "price_now",
+                      "now_price": "price_now",
                       "prev_expiry_low": "prev_low",
                       "prev_expiry_close": "prev_close"
                   })

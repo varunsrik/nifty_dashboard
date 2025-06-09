@@ -54,20 +54,20 @@ def scan_prev_expiry_cross(
     # -------- 2. conditions -------------------------------------------------
     breakout_close = joined[
         (joined["cash_close_latest"] <= joined["prev_expiry_close"]) &    # was ≤
-        (joined["live_close"]          > joined["prev_expiry_close"])].copy()
+        (joined["now_price"]          > joined["prev_expiry_close"])].copy()
     
     breakout_high = joined[
         (joined["cash_close_latest"] <= joined["prev_expiry_high"])  &
-        (joined["live_close"]          > joined["prev_expiry_high"])
+        (joined["now_price"]          > joined["prev_expiry_high"])
     ].copy()
 
     breakdown_close = joined[
         (joined["cash_close_latest"] >= joined["prev_expiry_close"]) &    # was ≥
-        (joined["live_close"]          < joined["prev_expiry_close"])].copy()
+        (joined["now_price"]          < joined["prev_expiry_close"])].copy()
     
     breakdown_low = joined[
         (joined["cash_close_latest"] >= joined["prev_expiry_low"])    &
-        (joined["live_close"]          < joined["prev_expiry_low"])
+        (joined["now_price"]          < joined["prev_expiry_low"])
     ].copy()
 
     return breakout_close, breakout_high, breakdown_close, breakdown_low
