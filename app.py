@@ -305,7 +305,10 @@ with tabs[5]:
         breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(
         reference = combined,      # live_bars=None → EOD mode
     )
-        
+    st.write(breakout_close_df) 
+    st.write(breakout_high_df)
+    st.write(breakdown_close_df)
+    st.write(breakdown_low_df)
     st.subheader("🔔 Intraday Break-outs (prev-expiry levels)")
     if breakout_close_df.empty and breakout_high_df.empty:
         st.info("Nothing yet.")
