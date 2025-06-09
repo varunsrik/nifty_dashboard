@@ -315,6 +315,21 @@ with tabs[5]:
         st.info("Nothing yet.")
     else:
         
+        cols = ["symbol", "now_price", "prev_expiry_high", "prev_expiry_close"]
+        
+        df_show = (
+            breakout_close_df          # or any of the other tables
+            .reset_index()             # moves index → column
+            .loc[:, cols]              # now 'symbol' is present
+            .rename(columns={
+                "now_price": "Price now",
+                "prev_expiry_high": "Prev high",
+                "prev_expiry_close": "Prev close",
+            })
+        )
+
+        st.dataframe(df_show)
+        
         st.dataframe(
             breakout_close_df[["now_price",
                          "prev_expiry_high", "prev_expiry_close"]])
