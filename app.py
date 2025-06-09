@@ -318,7 +318,7 @@ with tabs[5]:
             breakout_close_df[["now_price",
                          "prev_expiry_high", "prev_expiry_close"]]
               .rename(columns={
-                  "live_close": "price now",
+                  "now_price": "price now",
                   "prev_expiry_high": "previous expiry high",
                   "prev_expiry_close": "previous expiry close"
               })
