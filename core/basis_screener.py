@@ -9,7 +9,7 @@ Created on Tue Jun 10 14:49:01 2025
 # core/basis_screener.py
 import pandas as pd, re, streamlit as st
 from core.fno_utils import classify_futures          # we wrote this earlier
-from core.intraday_api import read_intraday          # or intraday_pg
+from core.fetch import read_intraday          # or intraday_pg
 from core.preprocess import index_with_live, cash_with_live
 from utils.kite_auth import get_kite
 
