@@ -33,7 +33,7 @@ def current_basis_table(cash_df, idx_df, fut_bars):
         .last()
         .set_index("symbol")["close"]
     )
-
+ 
     # classify futures
     front, back, far = classify_futures(fut_bars["symbol"].unique().tolist())
 
@@ -57,6 +57,10 @@ def current_basis_table(cash_df, idx_df, fut_bars):
         "back_px":  back_px,
         "far_px":   far_px,
     }).dropna(subset=["spot"])
+    
+    
+    st.write('tbl test')
+    st.write(tbl)
     
     tbl = tbl.copy()
 
