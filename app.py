@@ -2,6 +2,8 @@ import pandas as pd
 import streamlit as st
 import datetime as dt
 import re
+import plotly.graph_objects as go
+
 from core.fetch import fno_stock_all, get_constituents, read_intraday, get_intraday_symbols
 from core.straddles import straddle_tables, straddle_timeseries, price_timeseries
 from core.preprocess import (
@@ -14,15 +16,20 @@ from core.preprocess import (
     stock_explorer_processing
 )
 from core.live_zerodha import live_index_quotes, live_quotes, atm_straddle
+from core.sector import constituent_returns   
+from core.live_scanner import scan_prev_expiry_cross
+from core.fno_utils import classify_futures
+from core.basis_screener import current_basis_table, intraday_prices
+
+
+
 from plots.breadth import breadth_figure, advdec_figure
 from plots.stock_explorer import stock_explorer_figure
 from plots.sector import sector_figure
 from plots.straddle import straddle_figure
-from core.sector import constituent_returns   
-from core.live_scanner import scan_prev_expiry_cross
-from core.fno_utils import classify_futures
+from plots.basis        import basis_figure
+
 from app_config import INDEX_SYMBOLS
-import plotly.graph_objects as go
 
 
 
@@ -66,7 +73,9 @@ if st.sidebar.button("🔄 Update prices", help="Clear live caches and refresh")
     
 # =============================================================================
 
-tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis", "Straddle Prices", "⏱️ Intraday"])
+tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis", "Straddle Prices", "⏱️ Intraday", "Futures Basis") ])
+
+
 
 cash_df = cash_with_live(USE_LIVE)
 idx_df  = index_with_live(USE_LIVE)
@@ -437,3 +446,28 @@ with tabs[5]:
     )
     
     st.plotly_chart(fig3, use_container_width=True)
+    
+    
+
+# ────────────── Backwardation tab ─────────────────────────
+with tabs[6]:
+    st.header("📉 Futures Backwardation Screener")
+
+    # live dataframes you already have
+    spot_df = cash_df       # includes live candle when toggle on
+    idx_df  = idx_df        # live via index_with_live
+    fut_df  = fut_bars      # intraday future minute bars we pulled earlier
+
+    basis_tbl = current_basis_table(spot_df, idx_df, fut_df)
+    st.dataframe(
+        basis_tbl.style.format("{:.2f}").background_gradient(cmap="RdYlGn", axis=0),
+        height=400
+    )
+
+    # -------- interactive plot ------------------------------------------
+    sel = st.selectbox("Plot symbol", basis_tbl.index.tolist(), index=0)
+    spot_s, fut_dict = intraday_prices(sel, fut_df, pd.concat([spot_df, idx_df]))
+    if spot_s.empty or not fut_dict:
+        st.info("Waiting for intraday prices …")
+    else:
+        st.plotly_chart(basis_figure(sel, spot_s, fut_dict), use_container_width=True)
