@@ -73,7 +73,13 @@ if st.sidebar.button("🔄 Update prices", help="Clear live caches and refresh")
     
 # =============================================================================
 
-tabs = st.tabs(["📊 Market Breadth", "📈 Open Interest Analysis", "📉 Stock Explorer", "Sectoral Analysis", "Straddle Prices", "⏱️ Intraday", "Futures Basis") ])
+tabs = st.tabs(["📊 Market Breadth",
+                "📈 Open Interest Analysis",
+                "📉 Stock Explorer",
+                "Sectoral Analysis",
+                "Straddle Prices",
+                "⏱️ Intraday",
+                "Futures Basis"])
 
 
 
