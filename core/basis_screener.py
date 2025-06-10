@@ -57,13 +57,19 @@ def current_basis_table(cash_df, idx_df, fut_bars):
         "back_px":  back_px,
         "far_px":   far_px,
     }).dropna(subset=["spot"])
+    
+    tbl = tbl.copy()
 
-    # compute basis columns
+    # ---- compute basis columns ----------------------------------------
     for label in ["front", "back", "far"]:
-        tbl[[f"{label}_pts", f"{label}_pct"]] = list(
-            zip(*tbl.apply(lambda r: _basis(r[f"{label}_px"], r["spot"]), axis=1))
+        tbl[[f"{label}_pts", f"{label}_pct"]] = (
+            tbl.apply(
+                lambda r: _basis(r[f"{label}_px"], r["spot"]),
+                axis=1,
+                result_type="expand"     # ⇦ tells pandas to split tuple → 2 cols
+            )
         )
-
+        
     return tbl[[
         "spot",
         "front_pts","front_pct",
