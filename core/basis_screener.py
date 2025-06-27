@@ -37,14 +37,18 @@ def current_basis_table(cash_df, idx_df, fut_bars):
     # classify futures
     front, back, far = classify_futures(fut_bars["symbol"].unique().tolist())
 
+
     def latest_price(fut_list):
         if not fut_list:
             return pd.Series(dtype=float)
         df = fut_bars[fut_bars["symbol"].isin(fut_list)]
         px = (df.sort_values("datetime")
                 .groupby("symbol", as_index=False)
-                .last()[["symbol","close"]]
-                .set_index("symbol")["close"])
+                .last()[["symbol","close"]])
+        px["base"] = px["symbol"].str.replace(
+    r"\d{2}[A-Z]{3}FUT$", "", regex=True)
+        px = px.set_index('base')['close']
+        
         return px
 
     front_px = latest_price(front)
@@ -56,11 +60,8 @@ def current_basis_table(cash_df, idx_df, fut_bars):
         "front_px": front_px,
         "back_px":  back_px,
         "far_px":   far_px,
-    }).dropna(subset=["spot"])
+    }).dropna(subset=["front_px"])
     
-    
-    st.write('tbl test')
-    st.write(tbl)
     
     tbl = tbl.copy()
 
@@ -101,3 +102,47 @@ def intraday_prices(symbol, fut_bars, spot_bars):
     )
 
     return spot_series, fut_series
+
+# --------------------------------------------------------------------
+def daily_basis_series(symbol: str,
+                       cash_df: pd.DataFrame,
+                       idx_df: pd.DataFrame,
+                       fno_df: pd.DataFrame,
+                       months_back: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Returns
+    -------
+    price_df   – OHLC cash prices for the window
+    basis_df   – columns ['front_pct','back_pct','far_pct'] indexed by date
+    """
+
+    end   = cash_df["date"].max()
+    start = end - pd.DateOffset(months=months_back)
+
+    # ---------- spot -------------------------------------------------------
+    spot = pd.concat([cash_df, idx_df])
+    spot = (spot[(spot["symbol"] == symbol) &
+                 (spot["date"].between(start, end))]
+            .set_index("date")[["open","high","low","close"]])
+
+
+    fut_daily = (
+    fno_df[
+        (fno_df["symbol"] == symbol) &     # exact underlying name
+        (fno_df["date"].between(start, end))
+    ]
+    .set_index("date")[["front_fut_close", "back_fut_close"]]
+    )
+
+    # align index and forward-fill any holiday gaps so pct calc works
+    aligned = spot.join(fut_daily).ffill()
+    
+    basis_pct = pd.DataFrame({
+        "front_pct": (aligned["front_fut_close"] - aligned["close"]) /
+                     aligned["close"] * 100,
+        "back_pct":  (aligned["back_fut_close"]  - aligned["close"]) /
+                     aligned["close"] * 100,
+
+    })
+
+    return spot, basis_pct

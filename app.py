@@ -19,7 +19,7 @@ from core.live_zerodha import live_index_quotes, live_quotes, atm_straddle
 from core.sector import constituent_returns   
 from core.live_scanner import scan_prev_expiry_cross
 from core.fno_utils import classify_futures
-from core.basis_screener import current_basis_table, intraday_prices
+from core.basis_screener import current_basis_table, intraday_prices, daily_basis_series
 
 
 
@@ -27,7 +27,7 @@ from plots.breadth import breadth_figure, advdec_figure
 from plots.stock_explorer import stock_explorer_figure
 from plots.sector import sector_figure
 from plots.straddle import straddle_figure
-from plots.basis        import basis_figure
+from plots.basis        import  basis_daily_figure
 
 from app_config import INDEX_SYMBOLS
 
@@ -466,14 +466,21 @@ with tabs[6]:
 
     basis_tbl = current_basis_table(spot_df, idx_df, fut_df)
     st.dataframe(
-        basis_tbl.style.format("{:.2f}").background_gradient(cmap="RdYlGn", axis=0),
+        basis_tbl.style.format("{:.2f}").background_gradient(cmap="RdYlGn", axis=0, subset = ['front_pct', 'back_pct', 'far_pct']),
         height=400
     )
-
-    # -------- interactive plot ------------------------------------------
-    sel = st.selectbox("Plot symbol", basis_tbl.index.tolist(), index=0)
-    spot_s, fut_dict = intraday_prices(sel, fut_df, pd.concat([spot_df, idx_df]))
-    if spot_s.empty or not fut_dict:
-        st.info("Waiting for intraday prices …")
+    
+        
+    sel = st.selectbox("Plot daily series", basis_tbl.index.tolist(), index=0)
+    
+    cash_eod = cash_df.drop_duplicates(subset=["symbol","date"])
+    price_df, basis_df = daily_basis_series(
+        sel, cash_eod, idx_df, fno_df      # fno_df is your daily F&O snapshot
+    )
+    
+    if price_df.empty or basis_df.empty:
+        st.info("No data for that window.")
     else:
-        st.plotly_chart(basis_figure(sel, spot_s, fut_dict), use_container_width=True)
+        st.write(basis_df)
+        st.plotly_chart(basis_daily_figure(sel, price_df, basis_df),
+                        use_container_width=True)

@@ -6,35 +6,48 @@ Created on Tue Jun 10 18:19:58 2025
 @author: varun
 """
 
-# plots/basis.py
+from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-def basis_figure(symbol, spot_s, fut_dict):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=spot_s.index, y=spot_s, name=f"{symbol} spot", line=dict(color="black")
-    ))
+def basis_daily_figure(symbol, price_df, basis_df):
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        specs=[[{}],[{"secondary_y":True}]],
+                        row_heights=[0.6,0.4], vertical_spacing=0.04)
 
-    colors = ["blue","orange","green"]
-    for (sym, ser), col in zip(fut_dict.items(), colors):
-        fig.add_trace(go.Scatter(
-            x=ser.index, y=ser, name=sym, line=dict(color=col)
-        ))
+    # Row-1 OHLC
+    fig.add_trace(
+        go.Candlestick(
+            x=price_df.index, open=price_df["open"], high=price_df["high"],
+            low=price_df["low"], close=price_df["close"],
+            name=f"{symbol} spot"
+        ),
+        row=1,col=1
+    )
 
-    # add basis line for front contract
-    if fut_dict:
-        front_name, front_ser = next(iter(fut_dict.items()))
-        basis = (front_ser - spot_s.reindex(front_ser.index)).dropna()
-        fig.add_trace(go.Scatter(
-            x=basis.index, y=basis, name="Front basis", line=dict(dash="dot", color="red"),
-            yaxis="y2"
-        ))
+    # Row-2 basis pct (secondary y) & spot line (primary y)
+    # fig.add_trace(
+    #     go.Scatter(x=price_df.index, y=price_df["close"],
+    #                name="Spot close", line=dict(color="black")),
+    #     row=2,col=1, secondary_y=False
+    # )
+    colors = {"front_pct":"blue","back_pct":"orange","far_pct":"green"}
+    for col,c in colors.items():
+        if col in basis_df:
+            fig.add_trace(
+                go.Scatter(x=basis_df.index, y=basis_df[col],
+                           name=col.replace("_pct"," basis %"),
+                           line=dict(color=c, dash="dot")),
+                row=2,col=1, secondary_y=False
+            )
 
+    #fig.update_yaxes(title_text="Price", row=2,col=1, secondary_y=False)
+    fig.update_yaxes(title_text="Basis %", row=2,col=1, secondary_y=False)
+    # -------- turn OFF the default range-slider ----------------------------
+    fig.update_xaxes(rangeslider_visible=False)
+    
     fig.update_layout(
-        title=f"{symbol}: spot vs futures (today)",
-        yaxis=dict(title="Price"),
-        yaxis2=dict(title="Basis pts", overlaying="y", side="right", showgrid=False),
-        legend=dict(orientation="h"),
-        height=320
+        title=f"{symbol}: Price & Basis (last {len(price_df)} days)",
+        height=600,                         # overall figure height 
+        legend=dict(orientation="h")
     )
     return fig
