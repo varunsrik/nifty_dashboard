@@ -114,6 +114,17 @@ with tabs[1]:
     
     st.write(f'* Prices are for {cash_latest_date.strftime("%Y-%m-%d")}')
     
+    top_winners = combined['price_change'].nlargest(10)
+    top_losers = combined['price_change'].nsmallest(10)
+    
+    top_winners = combined[combined['price_change'].isin(top_winners)]
+    top_losers = combined[combined['price_change'].isin(top_losers)]
+    
+    st.subheader('Top Winners of this Expiry')
+    st.dataframe(top_winners.sort_values('price_change', ascending = False))
+    st.subheader('Top Losers of this Expiry')
+    st.dataframe(top_losers.sort_values('price_change'))
+    
     labels = [
     "OI Up / Price Up",
     "OI Up / Price Down",
@@ -128,7 +139,12 @@ with tabs[1]:
         ]].sort_values('price_change', ascending=False))
         
     
-    labels = ['price_above_prev_expiry_high', 'price_below_prev_expiry_low', 'price_above_prev_expiry_close', 'price_below_prev_expiry_close']
+    labels = [
+        'price_above_prev_expiry_high',
+              'price_below_prev_expiry_low',
+              'price_above_prev_expiry_close',
+              'price_below_prev_expiry_close'
+              ]
     
     for label in labels:
         label_str = label.replace('_', ' ').replace('prev', 'previous').title()
