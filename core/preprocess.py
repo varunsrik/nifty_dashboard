@@ -62,56 +62,45 @@ def index_with_live(use_live: bool) -> pd.DataFrame:
 
 @st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 # ─── Breadth helpers ─────────────────────────────────────────────────────────
+
 def breadth_panels(cash_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Returns
-    -------
-    ema_pct   : index=date, cols=[ema20, ema50, ema200]   (% > EMA)
-    nnhl      : index=date, cols=[net_new_high, net_new_low] (# stocks)
-    """
-    work = cash_df.copy()
-    work.sort_values(["symbol", "date"], inplace=True)
+    work = cash_df.copy().sort_values(["symbol", "date"])
 
-    # ---- rolling 52-wk high/low (for new-high / new-low test) ---------------
-    high_52 = (
-        work.groupby("symbol")["close"]
-            .transform(lambda s: s.rolling("365D", on=work.loc[s.index, "date"]).max())
+    # ---- 52-week highs / lows (use 252 trading sessions) -------------------
+    TRADING_YR = 252
+    high_52 = work.groupby("symbol")["close"].transform(
+        lambda s: s.rolling(TRADING_YR, min_periods=1).max()
     )
-    low_52 = (
-        work.groupby("symbol")["close"]
-            .transform(lambda s: s.rolling("365D", on=work.loc[s.index, "date"]).min())
+    low_52 = work.groupby("symbol")["close"].transform(
+        lambda s: s.rolling(TRADING_YR, min_periods=1).min()
     )
 
-    # ---- EMA columns --------------------------------------------------------
+    # ---- EMA % > lines -----------------------------------------------------
     for span in (20, 50, 200):
         work[f"ema{span}"] = (
             work.groupby("symbol")["close"].transform(lambda s: s.ewm(span=span).mean())
         )
 
-    # ---- daily aggregates ---------------------------------------------------
-    ema_pct = (
-        pd.concat(
-            {
-                f"ema{span}": (work["close"] > work[f"ema{span}"])
-                              .groupby(work["date"]).mean()*100
-                for span in (20, 50, 200)
-            },
-            axis=1
-        )
+    ema_pct = pd.concat(
+        {
+            f"ema{span}": (work["close"] > work[f"ema{span}"])
+                          .groupby(work["date"]).mean()*100
+            for span in (20, 50, 200)
+        },
+        axis=1,
     )
 
     highs = (work["close"] >= high_52).groupby(work["date"]).sum()
     lows  = (work["close"] <= low_52).groupby(work["date"]).sum()
 
     nnhl = pd.DataFrame(
-        {"net_new_high": highs, "net_new_low": -lows},  # lows negative for stacked area
-        index=highs.index
+        {"net_new_high": highs, "net_new_low": -lows},  # lows negative → red fill
+        index=highs.index,
     )
 
-    # trim to last 12 months (keep it light)
+    # keep last 12 months
     cut = work["date"].max() - pd.DateOffset(months=12)
-    return ema_pct[ema_pct.index >= cut], nnhl[nnhl.index >= cut]
-
+    return ema_pct.loc[cut:], nnhl.loc[cut:]
 
 @st.cache_data(ttl=CACHE_LIVE_TTL, show_spinner=False)
 def compute_adv_decl(cash_df: pd.DataFrame):
