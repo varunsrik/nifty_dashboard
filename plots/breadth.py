@@ -3,6 +3,64 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import pandas as pd
 
+
+
+# ── Panel A – % > EMA ────────────────────────────────────────────────────────
+def ema_area_figure(ema_pct: pd.DataFrame) -> go.Figure:
+    spans   = [20, 50, 200]
+    colors  = ["#e75480", "#55bbaa", "#9b7bed"]      # pick any you like
+    titles  = [f"Market Breadth – {s} EMA" for s in spans]
+
+    fig = make_subplots(
+        rows=3, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03, row_heights=[0.33, 0.33, 0.34]
+    )
+
+    for i, (span, col) in enumerate(zip(spans, colors), start=1):
+        fig.add_trace(
+            go.Scatter(
+                x=ema_pct.index, y=ema_pct[f"ema{span}"],
+                mode="lines", fill="tozeroy",
+                name=titles[i-1], line=dict(color=col, width=1)
+            ),
+            row=i, col=1
+        )
+        fig.update_yaxes(range=[0, 100], title="% Above", row=i, col=1)
+        fig.update_xaxes(showgrid=False, row=i, col=1)
+
+    fig.update_layout(
+        height=600, showlegend=False, margin=dict(t=25, b=25, l=25, r=25)
+    )
+    return fig
+
+
+# ── Panel B – Net New Highs / Lows ───────────────────────────────────────────
+def nnhl_figure(nnhl: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=nnhl.index, y=nnhl["net_new_high"],
+            name="Net New Highs", mode="lines",
+            fill="tozeroy", line=dict(color="#4aa4ff", width=1)
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=nnhl.index, y=nnhl["net_new_low"],
+            name="Net New Lows", mode="lines",
+            fill="tozeroy", line=dict(color="#ff6b6b", width=1)
+        )
+    )
+
+    fig.update_layout(
+        height=300, legend=dict(orientation="h"),
+        margin=dict(t=25, b=25, l=25, r=25),
+        yaxis_title="# Stocks"
+    )
+    return fig
+
+
 def breadth_figure(breadth_df, pct_df, nifty_df):
     # create secondary‑y subplot in *one* row
     fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])

@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from core.fetch import fno_stock_all, get_constituents, read_intraday, get_intraday_symbols
 from core.straddles import straddle_tables, straddle_timeseries, price_timeseries
 from core.preprocess import (
+    breadth_panels,
     cash_with_live,
     index_with_live,
     compute_adv_decl,
@@ -23,7 +24,7 @@ from core.basis_screener import current_basis_table, intraday_prices, daily_basi
 
 
 
-from plots.breadth import breadth_figure, advdec_figure
+from plots.breadth import breadth_figure, advdec_figure, ema_area_figure, nnhl_figure
 from plots.stock_explorer import stock_explorer_figure
 from plots.sector import sector_figure
 from plots.straddle import straddle_figure
@@ -86,6 +87,7 @@ tabs = st.tabs(["📊 Market Breadth",
 cash_df = cash_with_live(USE_LIVE)
 idx_df  = index_with_live(USE_LIVE)
 fno_df  = fno_stock_all()
+ema_pct, nnhl = breadth_panels(cash_df)
 
 
 
@@ -101,11 +103,22 @@ with tabs[0]:
     ]
     todays_date = breadth_df['date'].iloc[-1].strftime('%Y-%m-%d')
     st.write(f'* Prices are for {todays_date}')
-    st.plotly_chart(breadth_figure(breadth_df, pct_df, nifty_price_df),
-                use_container_width=True)
     
-    st.plotly_chart(advdec_figure(breadth_df, nifty_price_df),
-                    use_container_width=True)
+    
+    st.plotly_chart(ema_area_figure(ema_pct), use_container_width=True)
+    st.plotly_chart(nnhl_figure(nnhl),       use_container_width=True)
+    
+    
+    # st.plotly_chart(breadth_figure(breadth_df, pct_df, nifty_price_df),
+    #             use_container_width=True)
+    
+    # st.plotly_chart(advdec_figure(breadth_df, nifty_price_df),
+    #                 use_container_width=True)
+    
+    # after you already have cash_df
+
+
+
     
 with tabs[1]:
     st.header(f"📈 Open Interest Analysis — {TODAY_STR}")
