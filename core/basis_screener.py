@@ -65,6 +65,13 @@ def current_basis_table(cash_df, idx_df, fut_bars):
     
     tbl = tbl.copy()
 
+    # ---- handle empty case (no futures data yet) ---------------------
+    if tbl.empty:
+        return pd.DataFrame(columns=[
+            "spot", "front_pts", "front_pct",
+            "back_pts", "back_pct", "far_pts", "far_pct"
+        ])
+
     # ---- compute basis columns ----------------------------------------
     for label in ["front", "back", "far"]:
         tbl[[f"{label}_pts", f"{label}_pct"]] = (
