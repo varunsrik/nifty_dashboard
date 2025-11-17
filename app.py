@@ -332,7 +332,9 @@ with tabs[5]:
     cash_bars   = read_intraday([*get_constituents()["Symbol"].unique(),])
     index_bars = read_intraday(index_symbols)
     fut_bars = read_intraday(all_fut)
-
+    
+    st.subheader('test')
+    st.write(index_bars)
     nifty_bars  = index_bars[index_bars["symbol"] == "NIFTY 50"]
 
     
