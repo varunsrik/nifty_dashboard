@@ -335,7 +335,7 @@ with tabs[5]:
     
     st.subheader('test')
     st.write(index_bars)
-    nifty_bars  = index_bars[index_bars["symbol"] == "NIFTY 50"]
+    nifty_bars = index_bars[index_bars["symbol"] == "NIFTY 50"] if not index_bars.empty else pd.DataFrame()
 
     
     if USE_LIVE:
