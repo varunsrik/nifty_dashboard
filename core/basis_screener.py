@@ -89,6 +89,66 @@ def current_basis_table(cash_df, idx_df, fut_bars):
         "far_pts","far_pct"
     ]]
 
+@st.cache_data(ttl=30, show_spinner=False)
+def current_basis_table_daily(cash_df, idx_df, fno_df):
+    """
+    Daily F&O version - uses fno_df instead of intraday futures bars.
+    Returns a dataframe indexed by symbol with columns:
+    spot, front_pts, front_pct, back_pts, back_pct, far_pts, far_pct
+    """
+    # Latest spot
+    spot_latest = (
+        pd.concat([cash_df[["symbol","date","close"]],
+                   idx_df[["symbol","date","close"]]])
+        .sort_values("date")
+        .groupby("symbol", as_index=False)
+        .last()
+        .set_index("symbol")["close"]
+    )
+
+    # Latest F&O data
+    fno_latest = (
+        fno_df.sort_values("date")
+        .groupby("symbol", as_index=False)
+        .last()
+        .set_index("symbol")
+    )
+
+    # Build table
+    tbl = pd.DataFrame({
+        "spot": spot_latest,
+        "front_px": fno_latest.get("front_fut_close"),
+        "back_px": fno_latest.get("back_fut_close"),
+        "far_px": pd.Series(dtype=float),  # fno_df doesn't track far month
+    }).dropna(subset=["front_px"])
+
+    if tbl.empty:
+        return pd.DataFrame(columns=[
+            "spot", "front_pts", "front_pct",
+            "back_pts", "back_pct", "far_pts", "far_pct"
+        ])
+
+    # Compute basis
+    for label in ["front", "back"]:
+        tbl[[f"{label}_pts", f"{label}_pct"]] = (
+            tbl.apply(
+                lambda r: _basis(r[f"{label}_px"], r["spot"]),
+                axis=1,
+                result_type="expand"
+            )
+        )
+
+    # Add empty far columns
+    tbl["far_pts"] = None
+    tbl["far_pct"] = None
+
+    return tbl[[
+        "spot",
+        "front_pts","front_pct",
+        "back_pts","back_pct",
+        "far_pts","far_pct"
+    ]]
+
 # -------------------------------------------------------------------
 def intraday_prices(symbol, fut_bars, spot_bars):
     """Return spot & three future series for plotting."""

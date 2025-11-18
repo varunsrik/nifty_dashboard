@@ -20,7 +20,7 @@ from core.live_zerodha import live_index_quotes, live_quotes, atm_straddle
 from core.sector import constituent_returns   
 from core.live_scanner import scan_prev_expiry_cross
 from core.fno_utils import classify_futures
-from core.basis_screener import current_basis_table, intraday_prices, daily_basis_series
+from core.basis_screener import current_basis_table, current_basis_table_daily, intraday_prices, daily_basis_series
 
 
 
@@ -490,17 +490,18 @@ with tabs[5]:
 with tabs[6]:
     st.header("📉 Futures Backwardation Screener")
 
-    # live dataframes you already have
-    spot_df = cash_df       # includes live candle when toggle on
-    idx_df  = idx_df        # live via index_with_live
-    fut_df  = fut_bars      # intraday future minute bars we pulled earlier
+    # Choose data source based on USE_LIVE toggle
+    if USE_LIVE:
+        # Use intraday futures bars (real-time)
+        basis_tbl = current_basis_table(cash_df, idx_df, fut_bars)
+    else:
+        # Use daily F&O data (end-of-day)
+        basis_tbl = current_basis_table_daily(cash_df, idx_df, fno_df)
 
-    basis_tbl = current_basis_table(spot_df, idx_df, fut_df)
     st.dataframe(
         basis_tbl.style.format("{:.2f}").background_gradient(cmap="RdYlGn", axis=0, subset = ['front_pct', 'back_pct', 'far_pct']),
         height=400
     )
-    
         
     sel = st.selectbox("Plot daily series", basis_tbl.index.tolist(), index=0)
     
