@@ -33,15 +33,6 @@ from plots.basis        import  basis_daily_figure
 from app_config import INDEX_SYMBOLS
 
 
-
-
-DEFAULT_URL   = "https://1200-2406-7400-c8-ab81-20cf-a4ab-3f6-94c.ngrok-free.app"
-DEFAULT_TOKEN = "1391"
-
-API_URL   = st.secrets.get("api", {}).get("url",   DEFAULT_URL)
-API_TOKEN = st.secrets.get("api", {}).get("token", DEFAULT_TOKEN)
-
-
 st.set_page_config(page_title="📊 Market Breadth", layout="wide")
 
 TODAY = dt.date.today()
@@ -333,11 +324,12 @@ with tabs[5]:
     index_bars = read_intraday(index_symbols)
     fut_bars = read_intraday(all_fut)
     
-    st.subheader('test')
-    st.write(index_bars)
-    nifty_bars = index_bars[index_bars["symbol"] == "NIFTY 50"] if not index_bars.empty else pd.DataFrame()
+    if cash_bars.empty and index_bars.empty and fut_bars.empty:
+        st.info("No intraday data available. The bars table is empty — this tab is only populated during market hours.")
+        st.stop()
 
-    
+    nifty_bars = index_bars[index_bars["symbol"] == "NIFTY 50"] if not index_bars.empty else pd.DataFrame(columns=["symbol", "datetime", "open", "high", "low", "close", "volume"])
+
     if USE_LIVE:
         # live_bars = cash_bars from earlier;  combined = the reference table
         breakout_close_df, breakout_high_df, breakdown_close_df, breakdown_low_df = scan_prev_expiry_cross(
