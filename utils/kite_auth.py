@@ -1,50 +1,51 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May  7 20:46:29 2025
-
-@author: varun
-"""
-
 # utils/kite_auth.py
-from kiteconnect import KiteConnect
+import os
 from functools import lru_cache
+
 import streamlit as st
-import webbrowser
+from kiteconnect import KiteConnect
 
-# 1) -------------------------------------------------------------------------
-# Put these three env-vars in ~/.bashrc or export them before running Streamlit
-#   KC_API_KEY, KC_API_SECRET, KC_ACCESS_TOKEN
-# KC_ACCESS_TOKEN is blank the very first time; you’ll generate it with the CLI below.
 
-API_KEY = st.secrets.get("kite", {}).get("api_key", None)
-API_SECRET = st.secrets.get("kite", {}).get("api_secret", None)
+def _get_creds() -> tuple[str, str]:
+    """
+    Return (api_key, access_token) for today.
 
-# 2) -------------------------------------------------------------------------
-def manual_login() -> str:
-    """Run this once each morning to generate a fresh access token."""
-    kite = KiteConnect(api_key=API_KEY)
-    print("Opening Zerodha login…")
-    webbrowser.open(kite.login_url())
+    Direct mode (local, TRADING_DB_URL set): reads from DB via trading_core.
+    HTTP mode (Streamlit Cloud): hits the api_server /kite_token endpoint.
 
-    req_tok = input("Paste request_token from redirected URL: ").strip()
-    sess = kite.generate_session(req_tok, api_secret=API_SECRET)
-    print("ACCESS_TOKEN =", sess["access_token"])
-    # copy-paste that token into your env var
-    return sess["access_token"]
+    Raises RuntimeError if trading-login hasn't been run today.
+    """
+    if os.environ.get("TRADING_DB_URL"):
+        try:
+            from trading_core.queries import get_kite_token
+            creds = get_kite_token()
+            if creds:
+                return creds["api_key"], creds["access_token"]
+        except ImportError:
+            pass
+
+    # HTTP path (Streamlit Cloud or trading_core not installed)
+    import requests
+    api_url = st.secrets["api"]["url"]
+    api_token = st.secrets["api"]["token"]
+    resp = requests.get(
+        f"{api_url}/kite_token",
+        headers={"Authorization": f"Bearer {api_token}"},
+        timeout=10,
+    )
+    if resp.status_code == 404:
+        raise RuntimeError(
+            "No Kite token for today. Run 'trading-login' on your local machine."
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["api_key"], data["access_token"]
 
 
 @lru_cache(maxsize=1)
 def get_kite() -> KiteConnect:
-    """
-    Return a singleton KiteConnect client.
-    Reads the *current* access token from st.secrets each call,
-    so updating secrets + rerunning Streamlit picks up the new token.
-    """
-    token = st.secrets["kite"]["access_token"]
-    if not token:
-        raise RuntimeError("access_token empty – run manual_login() and update secrets")
-
-    kite = KiteConnect(api_key=API_KEY)
-    kite.set_access_token(token)
+    """Singleton KiteConnect client using today's token from the database."""
+    api_key, access_token = _get_creds()
+    kite = KiteConnect(api_key=api_key)
+    kite.set_access_token(access_token)
     return kite
